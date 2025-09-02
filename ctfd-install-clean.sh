@@ -809,8 +809,26 @@ EOF
     # Enable site
     ln -sf /etc/nginx/sites-available/ctfd /etc/nginx/sites-enabled/
     rm -f /etc/nginx/sites-enabled/default
-    nginx -t && systemctl reload nginx
-    log "${GREEN}✓ Nginx configured${NC}"
+    
+    # Fix nginx permissions and test configuration
+    mkdir -p /run/nginx /var/log/nginx
+    touch /run/nginx.pid
+    chown -R www-data:www-data /run/nginx /var/log/nginx
+    chmod 755 /run/nginx
+    chmod 644 /run/nginx.pid
+    
+    if nginx -t; then
+        systemctl reload nginx
+        log "${GREEN}✓ Nginx configured${NC}"
+    else
+        log "${YELLOW}⚠ Nginx configuration test failed. Attempting to start anyway...${NC}"
+        systemctl restart nginx
+        if systemctl is-active nginx >/dev/null; then
+            log "${GREEN}✓ Nginx started${NC}"
+        else
+            log "${RED}✗ Nginx failed to start. Check: sudo systemctl status nginx${NC}"
+        fi
+    fi
     
     # Step 8: SSL Certificate (optional)
     log "\n${GREEN}[Step 8/8] SSL Certificate Setup with Let's Encrypt...${NC}"
@@ -1192,6 +1210,29 @@ echo ""
 echo "⚠ Don't forget to check Azure Network Security Group!"
 echo "  Ports 80 and 443 must be open for inbound traffic"
 echo ""
+
+# Check for nginx permission issues and offer fix
+if ! sudo nginx -t >/dev/null 2>&1; then
+    if sudo nginx -t 2>&1 | grep -q "Permission denied"; then
+        echo "=== Nginx Permission Fix ==="
+        echo "Nginx has permission issues. Running fix..."
+        sudo mkdir -p /run/nginx /var/log/nginx
+        sudo touch /run/nginx.pid
+        sudo chown -R www-data:www-data /run/nginx /var/log/nginx
+        sudo chmod 755 /run/nginx
+        sudo chmod 644 /run/nginx.pid
+        
+        if sudo nginx -t >/dev/null 2>&1; then
+            echo "✓ Nginx permissions fixed"
+            sudo systemctl restart nginx
+            echo "✓ Nginx restarted"
+        else
+            echo "⚠ Nginx still has issues - may need manual intervention"
+        fi
+        echo ""
+    fi
+fi
+
 echo "Access URLs to test:"
 echo "  Internal: http://localhost:8000"
 if [[ "$PUBLIC_IP" != "Unable to get public IP" ]]; then
