@@ -110,7 +110,7 @@ setup_custom_themes() {
 install_popular_themes() {
     log "${YELLOW}Installing community themes...${NC}"
     
-    # Clone the official themes repository (with host key handling)
+    # Clone the official themes repository (with host key handling and debugging)
     # Add GitHub to known hosts to avoid interactive prompt for both root and actual user
     mkdir -p ~/.ssh
     mkdir -p "$ACTUAL_HOME/.ssh"
@@ -118,7 +118,11 @@ install_popular_themes() {
     ssh-keyscan -H github.com >> "$ACTUAL_HOME/.ssh/known_hosts" 2>/dev/null || true
     chown -R $ACTUAL_USER:$ACTUAL_USER "$ACTUAL_HOME/.ssh" 2>/dev/null || true
     
-    if git clone --recursive https://github.com/CTFd/themes.git temp_themes 2>/dev/null; then
+    # Set git config to use HTTPS instead of SSH for github.com
+    git config --global url."https://github.com/".insteadOf git@github.com: 2>/dev/null || true
+    
+    log "${YELLOW}Attempting to clone themes repository...${NC}"
+    if git clone --recursive https://github.com/CTFd/themes.git temp_themes; then
         log "${GREEN}✓ Downloaded community themes repository${NC}"
         
         # List of popular themes to install
@@ -144,7 +148,34 @@ install_popular_themes() {
         log "${YELLOW}You can change themes in CTFd Admin Panel > Configuration > Theme${NC}"
     else
         log "${RED}✗ Failed to download themes repository${NC}"
-        log "${YELLOW}You can manually add themes later to: $INSTALL_DIR/data/CTFd/themes/${NC}"
+        log "${YELLOW}Attempting to download individual popular themes...${NC}"
+        
+        # Fallback: try to download individual popular themes directly
+        POPULAR_THEME_REPOS=(
+            "https://github.com/CTFd/CTFd-Dark-Theme.git:dark"
+            "https://github.com/chainflag/ctfd-neon-theme.git:neon"
+            "https://github.com/hmrserver/pixo.git:pixo"
+        )
+        
+        themes_installed=0
+        for theme_repo in "${POPULAR_THEME_REPOS[@]}"; do
+            IFS=':' read -r repo_url theme_name <<< "$theme_repo"
+            log "${YELLOW}Trying to install $theme_name theme...${NC}"
+            if git clone "$repo_url" "data/CTFd/themes/$theme_name" 2>/dev/null; then
+                log "${GREEN}✓ Installed $theme_name theme${NC}"
+                themes_installed=$((themes_installed + 1))
+            else
+                log "${YELLOW}⚠ Failed to install $theme_name theme${NC}"
+            fi
+        done
+        
+        if [ $themes_installed -gt 0 ]; then
+            log "${GREEN}✓ Successfully installed $themes_installed themes${NC}"
+        else
+            log "${YELLOW}No themes could be installed automatically${NC}"
+        fi
+        
+        log "${YELLOW}You can manually add more themes to: $INSTALL_DIR/data/CTFd/themes/${NC}"
     fi
 }
 
@@ -163,14 +194,15 @@ install_custom_theme_url() {
     
     log "${YELLOW}Installing theme: $theme_name...${NC}"
     
-    # Ensure GitHub host key is known
+    # Configure git to use HTTPS and ensure host key is known
+    git config --global url."https://github.com/".insteadOf git@github.com: 2>/dev/null || true
     mkdir -p ~/.ssh
     mkdir -p "$ACTUAL_HOME/.ssh"
     ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
     ssh-keyscan -H github.com >> "$ACTUAL_HOME/.ssh/known_hosts" 2>/dev/null || true
     chown -R $ACTUAL_USER:$ACTUAL_USER "$ACTUAL_HOME/.ssh" 2>/dev/null || true
     
-    if git clone "$theme_url" "data/CTFd/themes/$theme_name" 2>/dev/null; then
+    if git clone "$theme_url" "data/CTFd/themes/$theme_name"; then
         log "${GREEN}✓ Successfully installed $theme_name theme${NC}"
         log "${YELLOW}You can activate it in CTFd Admin Panel > Configuration > Theme${NC}"
     else
@@ -970,10 +1002,11 @@ read -p "Select option [1-4]: " choice
 case $choice in
     1)
         echo "Installing popular community themes..."
-        # Ensure GitHub host key is known
+        # Configure git and ensure GitHub host key is known
+        git config --global url."https://github.com/".insteadOf git@github.com: 2>/dev/null || true
         mkdir -p ~/.ssh
         ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-        if git clone --recursive https://github.com/CTFd/themes.git temp_themes 2>/dev/null; then
+        if git clone --recursive https://github.com/CTFd/themes.git temp_themes; then
             POPULAR_THEMES=("dark" "neon" "pixo" "odin" "crimson")
             for theme in "${POPULAR_THEMES[@]}"; do
                 if [ -d "temp_themes/$theme" ]; then
@@ -994,11 +1027,12 @@ case $choice in
     2)
         read -p "Enter GitHub repository URL: " theme_url
         if [[ -n "$theme_url" ]]; then
-            # Ensure GitHub host key is known
+            # Configure git and ensure GitHub host key is known
+            git config --global url."https://github.com/".insteadOf git@github.com: 2>/dev/null || true
             mkdir -p ~/.ssh
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
             theme_name=$(basename "$theme_url" .git)
-            if git clone "$theme_url" "data/CTFd/themes/$theme_name" 2>/dev/null; then
+            if git clone "$theme_url" "data/CTFd/themes/$theme_name"; then
                 echo "✓ Successfully installed $theme_name theme"
                 echo "Restart CTFd to see new theme: docker compose restart"
             else
