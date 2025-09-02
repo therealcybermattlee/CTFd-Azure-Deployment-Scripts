@@ -110,7 +110,14 @@ setup_custom_themes() {
 install_popular_themes() {
     log "${YELLOW}Installing community themes...${NC}"
     
-    # Clone the official themes repository
+    # Clone the official themes repository (with host key handling)
+    # Add GitHub to known hosts to avoid interactive prompt for both root and actual user
+    mkdir -p ~/.ssh
+    mkdir -p "$ACTUAL_HOME/.ssh"
+    ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+    ssh-keyscan -H github.com >> "$ACTUAL_HOME/.ssh/known_hosts" 2>/dev/null || true
+    chown -R $ACTUAL_USER:$ACTUAL_USER "$ACTUAL_HOME/.ssh" 2>/dev/null || true
+    
     if git clone --recursive https://github.com/CTFd/themes.git temp_themes 2>/dev/null; then
         log "${GREEN}✓ Downloaded community themes repository${NC}"
         
@@ -155,6 +162,13 @@ install_custom_theme_url() {
     theme_name=$(basename "$theme_url" .git)
     
     log "${YELLOW}Installing theme: $theme_name...${NC}"
+    
+    # Ensure GitHub host key is known
+    mkdir -p ~/.ssh
+    mkdir -p "$ACTUAL_HOME/.ssh"
+    ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+    ssh-keyscan -H github.com >> "$ACTUAL_HOME/.ssh/known_hosts" 2>/dev/null || true
+    chown -R $ACTUAL_USER:$ACTUAL_USER "$ACTUAL_HOME/.ssh" 2>/dev/null || true
     
     if git clone "$theme_url" "data/CTFd/themes/$theme_name" 2>/dev/null; then
         log "${GREEN}✓ Successfully installed $theme_name theme${NC}"
@@ -956,6 +970,9 @@ read -p "Select option [1-4]: " choice
 case $choice in
     1)
         echo "Installing popular community themes..."
+        # Ensure GitHub host key is known
+        mkdir -p ~/.ssh
+        ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
         if git clone --recursive https://github.com/CTFd/themes.git temp_themes 2>/dev/null; then
             POPULAR_THEMES=("dark" "neon" "pixo" "odin" "crimson")
             for theme in "${POPULAR_THEMES[@]}"; do
@@ -977,6 +994,9 @@ case $choice in
     2)
         read -p "Enter GitHub repository URL: " theme_url
         if [[ -n "$theme_url" ]]; then
+            # Ensure GitHub host key is known
+            mkdir -p ~/.ssh
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
             theme_name=$(basename "$theme_url" .git)
             if git clone "$theme_url" "data/CTFd/themes/$theme_name" 2>/dev/null; then
                 echo "✓ Successfully installed $theme_name theme"
