@@ -1191,6 +1191,69 @@ if [[ "$PUBLIC_IP" != "Unable to get public IP" ]]; then
 fi
 
 echo ""
+echo "=== Cloudflare Diagnostics ==="
+
+# Check for domain configuration
+if [ -f ".env" ]; then
+    DOMAIN=$(grep "DOMAIN=" .env 2>/dev/null | cut -d'=' -f2)
+    if [[ -n "$DOMAIN" ]]; then
+        echo "Configured domain: $DOMAIN"
+        
+        # Check DNS resolution
+        echo "DNS resolution test:"
+        RESOLVED_IP=$(dig +short "$DOMAIN" 2>/dev/null | tail -1)
+        if [[ -n "$RESOLVED_IP" ]]; then
+            echo "  $DOMAIN resolves to: $RESOLVED_IP"
+            if [[ "$RESOLVED_IP" != "$PUBLIC_IP" ]]; then
+                # Check if it's a Cloudflare IP
+                if curl -s "https://api.cloudflare.com/client/v4/ips" | grep -q "$RESOLVED_IP" 2>/dev/null; then
+                    echo "  ✓ Cloudflare proxy detected"
+                else
+                    echo "  ⚠ Domain points to different IP (not Cloudflare or direct)"
+                fi
+            else
+                echo "  ✓ Direct DNS (not proxied)"
+            fi
+        else
+            echo "  ✗ DNS resolution failed"
+        fi
+        
+        # Test domain connectivity
+        echo ""
+        echo "Domain connectivity test:"
+        if curl -s -o /dev/null -w "HTTP %{http_code}" "http://$DOMAIN" --max-time 10; then
+            echo " - http://$DOMAIN"
+        else
+            echo " - http://$DOMAIN (failed)"
+        fi
+        
+        if curl -s -o /dev/null -w "HTTP %{http_code}" "https://$DOMAIN" --max-time 10; then
+            echo " - https://$DOMAIN"
+        else
+            echo " - https://$DOMAIN (failed)"
+        fi
+        
+        # Check SSL certificate
+        echo ""
+        echo "SSL Certificate check:"
+        SSL_ISSUER=$(echo | openssl s_client -servername "$DOMAIN" -connect "$DOMAIN:443" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -o "CN=[^,]*" | head -1)
+        if [[ "$SSL_ISSUER" == *"Cloudflare"* ]]; then
+            echo "  ✓ Cloudflare SSL certificate"
+        elif [[ "$SSL_ISSUER" == *"Let's Encrypt"* ]]; then
+            echo "  ✓ Let's Encrypt certificate (direct)"
+        elif [[ -n "$SSL_ISSUER" ]]; then
+            echo "  ℹ SSL certificate: $SSL_ISSUER"
+        else
+            echo "  ✗ No SSL certificate or connection failed"
+        fi
+    else
+        echo "No domain configured in .env file"
+    fi
+else
+    echo "No .env file found - domain not configured"
+fi
+
+echo ""
 echo "=== Recommendations ==="
 
 if ! systemctl is-active nginx >/dev/null 2>&1; then
@@ -1207,6 +1270,30 @@ if sudo ufw status 2>/dev/null | grep -q "Status: active"; then
 fi
 
 echo ""
+echo "=== Cloudflare Recommendations ==="
+
+if [[ -n "$DOMAIN" ]]; then
+    if [[ "$RESOLVED_IP" != "$PUBLIC_IP" ]]; then
+        echo "🔸 Cloudflare Configuration Tips:"
+        echo "  1. SSL/TLS Mode: Set to 'Full (strict)' if you have Let's Encrypt"
+        echo "  2. SSL/TLS Mode: Set to 'Flexible' if you only have HTTP"
+        echo "  3. Always Use HTTPS: Enable if using SSL"
+        echo "  4. Edge Certificates: Check 'Universal SSL' is active"
+        echo ""
+        echo "🔸 Common Cloudflare Issues:"
+        echo "  • 525 Error: Origin SSL certificate not valid"
+        echo "  • 526 Error: Origin certificate invalid/self-signed"
+        echo "  • 521 Error: Web server is down"
+        echo "  • 522 Error: Connection timed out"
+        echo ""
+        echo "🔸 Quick Cloudflare Fixes:"
+        echo "  • Temporarily bypass Cloudflare: Set DNS to 'DNS Only' (gray cloud)"
+        echo "  • Check origin server: Test direct IP access"
+        echo "  • Verify SSL mode matches your server setup"
+        echo ""
+    fi
+fi
+
 echo "⚠ Don't forget to check Azure Network Security Group!"
 echo "  Ports 80 and 443 must be open for inbound traffic"
 echo ""
