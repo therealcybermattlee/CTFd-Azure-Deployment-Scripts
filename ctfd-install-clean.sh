@@ -132,12 +132,16 @@ install_popular_themes() {
             if [ -d "temp_themes/$theme" ]; then
                 cp -r "temp_themes/$theme" "data/CTFd/themes/"
                 log "${GREEN}✓ Installed $theme theme${NC}"
-            elif find temp_themes -name "*$theme*" -type d | head -1 | read theme_dir; then
-                theme_name=$(basename "$theme_dir")
-                cp -r "$theme_dir" "data/CTFd/themes/"
-                log "${GREEN}✓ Installed $theme_name theme${NC}"
             else
-                log "${YELLOW}⚠ Theme $theme not found, skipping${NC}"
+                # Look for theme directories with fuzzy matching
+                theme_dir=$(find temp_themes -name "*$theme*" -type d | head -1)
+                if [ -n "$theme_dir" ] && [ -d "$theme_dir" ]; then
+                    theme_name=$(basename "$theme_dir")
+                    cp -r "$theme_dir" "data/CTFd/themes/"
+                    log "${GREEN}✓ Installed $theme_name theme${NC}"
+                else
+                    log "${YELLOW}⚠ Theme $theme not found, skipping${NC}"
+                fi
             fi
         done
         
@@ -1012,10 +1016,16 @@ case $choice in
                 if [ -d "temp_themes/$theme" ]; then
                     cp -r "temp_themes/$theme" "data/CTFd/themes/"
                     echo "✓ Installed $theme theme"
-                elif find temp_themes -name "*$theme*" -type d | head -1 | read theme_dir; then
-                    theme_name=$(basename "$theme_dir")
-                    cp -r "$theme_dir" "data/CTFd/themes/"
-                    echo "✓ Installed $theme_name theme"
+                else
+                    # Look for theme directories with fuzzy matching
+                    theme_dir=$(find temp_themes -name "*$theme*" -type d | head -1)
+                    if [ -n "$theme_dir" ] && [ -d "$theme_dir" ]; then
+                        theme_name=$(basename "$theme_dir")
+                        cp -r "$theme_dir" "data/CTFd/themes/"
+                        echo "✓ Installed $theme_name theme"
+                    else
+                        echo "⚠ Theme $theme not found, skipping"
+                    fi
                 fi
             done
             rm -rf temp_themes
