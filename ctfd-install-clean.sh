@@ -1075,6 +1075,130 @@ case $choice in
 esac
 EOF
 
+    # Network diagnostics script
+    cat > "$INSTALL_DIR/diagnose-network.sh" << 'EOF'
+#!/bin/bash
+cd "$(dirname "$0")"
+
+echo "=== CTFd Network Diagnostics ==="
+echo ""
+
+# Get public IP
+PUBLIC_IP=$(curl -s ifconfig.me 2>/dev/null || echo "Unable to get public IP")
+echo "Public IP: $PUBLIC_IP"
+
+# Check if running on Azure
+if curl -s -H "Metadata:true" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" >/dev/null 2>&1; then
+    echo "Running on: Azure VM"
+else
+    echo "Running on: Other cloud/local"
+fi
+
+echo ""
+echo "=== Port Status ==="
+
+# Check if ports are listening
+echo "Local port bindings:"
+ss -tlnp | grep -E "(80|443|8000)" || echo "No web ports listening"
+
+echo ""
+echo "=== Service Status ==="
+
+# Check Docker containers
+echo "CTFd containers:"
+if docker compose ps 2>/dev/null | tail -n +2; then
+    echo "✓ Docker containers running"
+else
+    echo "✗ Docker containers not running"
+fi
+
+# Check nginx
+echo ""
+echo "Nginx status:"
+if systemctl is-active nginx >/dev/null 2>&1; then
+    echo "✓ Nginx is running"
+    if nginx -t >/dev/null 2>&1; then
+        echo "✓ Nginx configuration is valid"
+    else
+        echo "✗ Nginx configuration has errors"
+        nginx -t
+    fi
+else
+    echo "✗ Nginx is not running"
+fi
+
+echo ""
+echo "=== Firewall Status ==="
+
+# Check ufw
+if command -v ufw >/dev/null 2>&1; then
+    echo "Ubuntu Firewall (ufw):"
+    sudo ufw status
+else
+    echo "ufw not installed"
+fi
+
+# Check iptables
+echo ""
+echo "iptables rules (Docker may add rules):"
+sudo iptables -L INPUT -n | head -10
+
+echo ""
+echo "=== Connectivity Tests ==="
+
+# Test local connections
+echo "Testing local connections:"
+if curl -s -o /dev/null -w "HTTP %{http_code}" http://localhost:8000; then
+    echo " - http://localhost:8000"
+fi
+
+if curl -s -o /dev/null -w "HTTP %{http_code}" http://localhost; then
+    echo " - http://localhost (nginx)"
+fi
+
+echo ""
+echo "Testing external access (from VM):"
+if [[ "$PUBLIC_IP" != "Unable to get public IP" ]]; then
+    if curl -s -o /dev/null -w "HTTP %{http_code}" "http://$PUBLIC_IP" --max-time 5; then
+        echo " - http://$PUBLIC_IP"
+    else
+        echo " - http://$PUBLIC_IP (failed - likely NSG/firewall issue)"
+    fi
+    
+    if curl -s -o /dev/null -w "HTTP %{http_code}" "http://$PUBLIC_IP:8000" --max-time 5; then
+        echo " - http://$PUBLIC_IP:8000"
+    else
+        echo " - http://$PUBLIC_IP:8000 (failed - port 8000 blocked)"
+    fi
+fi
+
+echo ""
+echo "=== Recommendations ==="
+
+if ! systemctl is-active nginx >/dev/null 2>&1; then
+    echo "⚠ Start nginx: sudo systemctl start nginx"
+fi
+
+if ! docker compose ps 2>/dev/null | grep -q "Up"; then
+    echo "⚠ Start CTFd: docker compose up -d"
+fi
+
+if sudo ufw status 2>/dev/null | grep -q "Status: active"; then
+    echo "⚠ Check firewall rules - ufw is active"
+    echo "  Allow ports: sudo ufw allow 80 && sudo ufw allow 443"
+fi
+
+echo ""
+echo "⚠ Don't forget to check Azure Network Security Group!"
+echo "  Ports 80 and 443 must be open for inbound traffic"
+echo ""
+echo "Access URLs to test:"
+echo "  Internal: http://localhost:8000"
+if [[ "$PUBLIC_IP" != "Unable to get public IP" ]]; then
+    echo "  External: http://$PUBLIC_IP"
+fi
+EOF
+
     # Health check script
     cat > "$INSTALL_DIR/health-ctfd.sh" << 'EOF'
 #!/bin/bash
@@ -1173,6 +1297,7 @@ EOF
     log "  Health: $INSTALL_DIR/health-ctfd.sh"
     log "  Fix: $INSTALL_DIR/fix-ctfd.sh"
     log "  Themes: $INSTALL_DIR/manage-themes.sh"
+    log "  Network: $INSTALL_DIR/diagnose-network.sh"
     log ""
     log "${GREEN}Next Steps:${NC}"
     log "  1. Visit https://$DOMAIN/setup"
@@ -1182,6 +1307,12 @@ EOF
     log ""
     log "${YELLOW}Azure NSG Reminder:${NC}"
     log "  Ensure ports 80 and 443 are open in Network Security Group"
+    log ""
+    log "${YELLOW}If external access doesn't work:${NC}"
+    log "  1. Check Azure NSG: ports 80, 443 must be open"
+    log "  2. Check Ubuntu firewall: sudo ufw status"
+    log "  3. Test direct access: http://PUBLIC_IP:8000"
+    log "  4. Run network diagnostics: ./diagnose-network.sh"
     log ""
     log "${GREEN}Installation log saved to: $LOG_FILE${NC}"
 }
