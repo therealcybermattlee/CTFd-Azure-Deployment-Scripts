@@ -54,7 +54,7 @@ log "${BLUE}========================================${NC}"
 echo ""
 
 # Confirmation prompt
-read -p "$(echo -e ${YELLOW}Do you want to proceed with installation? [y/N]:${NC}) " -n 1 -r
+read -p "$(echo -e "${YELLOW}Do you want to proceed with installation? [y/N]:${NC} ") " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     log "${RED}Installation cancelled${NC}"
@@ -83,7 +83,7 @@ setup_custom_themes() {
     echo ""
     
     while true; do
-        read -p "$(echo -e ${YELLOW}Select option [1-3]:${NC}) " theme_choice
+        read -p "$(echo -e "${YELLOW}Select option [1-3]:${NC} ") " theme_choice
         case $theme_choice in
             1)
                 log "${GREEN}Using default CTFd theme${NC}"
@@ -144,7 +144,7 @@ install_popular_themes() {
 # Function to install custom theme from GitHub URL
 install_custom_theme_url() {
     echo ""
-    read -p "$(echo -e ${YELLOW}Enter GitHub repository URL (e.g., https://github.com/user/theme-repo):${NC}) " theme_url
+    read -p "$(echo -e "${YELLOW}Enter GitHub repository URL (e.g., https://github.com/user/theme-repo):${NC} ") " theme_url
     
     if [[ -z "$theme_url" ]]; then
         log "${RED}No URL provided, skipping theme installation${NC}"

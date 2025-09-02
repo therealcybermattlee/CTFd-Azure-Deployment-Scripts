@@ -64,7 +64,7 @@ log "  4) Cancel - Exit without making changes"
 echo ""
 
 while true; do
-    read -p "$(echo -e ${YELLOW}Select option [1-4]:${NC}) " uninstall_mode
+    read -p "$(echo -e "${YELLOW}Select option [1-4]:${NC} ") " uninstall_mode
     case $uninstall_mode in
         1|2|3)
             break
@@ -90,14 +90,14 @@ if [ "$uninstall_mode" == "1" ]; then
     log "${RED}  - All backups${NC}"
     log "${RED}  - All configurations${NC}"
     log ""
-    read -p "$(echo -e ${RED}Type 'DELETE ALL' to confirm:${NC}) " confirm
+    read -p "$(echo -e "${RED}Type 'DELETE ALL' to confirm:${NC} ") " confirm
     if [ "$confirm" != "DELETE ALL" ]; then
         log "${GREEN}Uninstall cancelled${NC}"
         exit 0
     fi
 else
     log ""
-    read -p "$(echo -e ${YELLOW}Are you sure you want to continue? [y/N]:${NC}) " -n 1 -r
+    read -p "$(echo -e "${YELLOW}Are you sure you want to continue? [y/N]:${NC} ") " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         log "${GREEN}Uninstall cancelled${NC}"
@@ -274,7 +274,7 @@ remove_ctfd_files() {
 remove_docker_optional() {
     if [ "$uninstall_mode" == "1" ]; then
         echo ""
-        read -p "$(echo -e ${YELLOW}Remove Docker completely from the system? [y/N]:${NC}) " -n 1 -r
+        read -p "$(echo -e "${YELLOW}Remove Docker completely from the system? [y/N]:${NC} ") " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             log "${YELLOW}Removing Docker...${NC}"
