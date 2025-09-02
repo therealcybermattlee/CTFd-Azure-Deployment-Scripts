@@ -71,6 +71,100 @@ generate_password() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-25
 }
 
+# Function to setup custom themes
+setup_custom_themes() {
+    log "${GREEN}[*] Theme Setup...${NC}"
+    echo ""
+    log "${YELLOW}Would you like to install custom themes from the community?${NC}"
+    log "${BLUE}Available options:${NC}"
+    log "  1) No themes (use default CTFd theme)"
+    log "  2) Install popular community themes"
+    log "  3) Install specific theme from GitHub URL"
+    echo ""
+    
+    while true; do
+        read -p "$(echo -e ${YELLOW}Select option [1-3]:${NC}) " theme_choice
+        case $theme_choice in
+            1)
+                log "${GREEN}Using default CTFd theme${NC}"
+                return
+                ;;
+            2)
+                log "${GREEN}Installing popular community themes...${NC}"
+                install_popular_themes
+                break
+                ;;
+            3)
+                log "${GREEN}Installing custom theme from GitHub...${NC}"
+                install_custom_theme_url
+                break
+                ;;
+            *)
+                log "${RED}Invalid option. Please select 1-3.${NC}"
+                ;;
+        esac
+    done
+}
+
+# Function to install popular community themes
+install_popular_themes() {
+    log "${YELLOW}Installing community themes...${NC}"
+    
+    # Clone the official themes repository
+    if git clone --recursive https://github.com/CTFd/themes.git temp_themes 2>/dev/null; then
+        log "${GREEN}✓ Downloaded community themes repository${NC}"
+        
+        # List of popular themes to install
+        POPULAR_THEMES=("dark" "neon" "pixo" "odin" "crimson")
+        
+        for theme in "${POPULAR_THEMES[@]}"; do
+            if [ -d "temp_themes/$theme" ]; then
+                cp -r "temp_themes/$theme" "data/CTFd/themes/"
+                log "${GREEN}✓ Installed $theme theme${NC}"
+            elif find temp_themes -name "*$theme*" -type d | head -1 | read theme_dir; then
+                theme_name=$(basename "$theme_dir")
+                cp -r "$theme_dir" "data/CTFd/themes/"
+                log "${GREEN}✓ Installed $theme_name theme${NC}"
+            else
+                log "${YELLOW}⚠ Theme $theme not found, skipping${NC}"
+            fi
+        done
+        
+        # Clean up
+        rm -rf temp_themes
+        
+        log "${GREEN}✓ Popular themes installed${NC}"
+        log "${YELLOW}You can change themes in CTFd Admin Panel > Configuration > Theme${NC}"
+    else
+        log "${RED}✗ Failed to download themes repository${NC}"
+        log "${YELLOW}You can manually add themes later to: $INSTALL_DIR/data/CTFd/themes/${NC}"
+    fi
+}
+
+# Function to install custom theme from GitHub URL
+install_custom_theme_url() {
+    echo ""
+    read -p "$(echo -e ${YELLOW}Enter GitHub repository URL (e.g., https://github.com/user/theme-repo):${NC}) " theme_url
+    
+    if [[ -z "$theme_url" ]]; then
+        log "${RED}No URL provided, skipping theme installation${NC}"
+        return
+    fi
+    
+    # Extract theme name from URL
+    theme_name=$(basename "$theme_url" .git)
+    
+    log "${YELLOW}Installing theme: $theme_name...${NC}"
+    
+    if git clone "$theme_url" "data/CTFd/themes/$theme_name" 2>/dev/null; then
+        log "${GREEN}✓ Successfully installed $theme_name theme${NC}"
+        log "${YELLOW}You can activate it in CTFd Admin Panel > Configuration > Theme${NC}"
+    else
+        log "${RED}✗ Failed to clone theme repository${NC}"
+        log "${YELLOW}Please check the URL and try again manually${NC}"
+    fi
+}
+
 # Function to wait for apt locks
 wait_for_apt() {
     local max_wait=300  # 5 minutes max
@@ -528,6 +622,7 @@ main() {
     # Create data directories
     mkdir -p data/CTFd/logs
     mkdir -p data/CTFd/uploads
+    mkdir -p data/CTFd/themes
     mkdir -p data/mysql
     mkdir -p data/redis
     chmod -R 755 data/
@@ -549,6 +644,9 @@ DOMAIN=$DOMAIN
 EOF
     
     log "${GREEN}✓ Credentials generated${NC}"
+    
+    # Step 4.5: Setup custom themes
+    setup_custom_themes
     
     # Step 5: Create docker-compose.yml
     log "\n${GREEN}[Step 5/8] Creating Docker configuration...${NC}"
@@ -575,6 +673,7 @@ services:
     volumes:
       - ./data/CTFd/logs:/var/log/CTFd
       - ./data/CTFd/uploads:/var/uploads
+      - ./data/CTFd/themes:/opt/CTFd/CTFd/themes
     depends_on:
       - db
       - cache
@@ -830,6 +929,88 @@ echo "Backup saved to: $BACKUP_DIR/ctfd-backup-$TIMESTAMP.tar.gz"
 ls -lh "$BACKUP_DIR/ctfd-backup-$TIMESTAMP.tar.gz"
 EOF
     
+    # Theme management script
+    cat > "$INSTALL_DIR/manage-themes.sh" << 'EOF'
+#!/bin/bash
+cd "$(dirname "$0")"
+
+echo "=== CTFd Theme Manager ==="
+echo ""
+echo "Current themes installed:"
+if [ -d "data/CTFd/themes" ] && [ "$(ls -A data/CTFd/themes)" ]; then
+    ls -la data/CTFd/themes/ | grep "^d" | awk '{print "  - " $9}' | grep -v "^\s*- \.$" | grep -v "^\s*- \.\.$"
+else
+    echo "  No custom themes installed"
+fi
+
+echo ""
+echo "Theme management options:"
+echo "1) Install popular community themes"
+echo "2) Install theme from GitHub URL"
+echo "3) Remove a theme"
+echo "4) Exit"
+echo ""
+
+read -p "Select option [1-4]: " choice
+
+case $choice in
+    1)
+        echo "Installing popular community themes..."
+        if git clone --recursive https://github.com/CTFd/themes.git temp_themes 2>/dev/null; then
+            POPULAR_THEMES=("dark" "neon" "pixo" "odin" "crimson")
+            for theme in "${POPULAR_THEMES[@]}"; do
+                if [ -d "temp_themes/$theme" ]; then
+                    cp -r "temp_themes/$theme" "data/CTFd/themes/"
+                    echo "✓ Installed $theme theme"
+                elif find temp_themes -name "*$theme*" -type d | head -1 | read theme_dir; then
+                    theme_name=$(basename "$theme_dir")
+                    cp -r "$theme_dir" "data/CTFd/themes/"
+                    echo "✓ Installed $theme_name theme"
+                fi
+            done
+            rm -rf temp_themes
+            echo "Restart CTFd to see new themes: docker compose restart"
+        else
+            echo "Failed to download themes repository"
+        fi
+        ;;
+    2)
+        read -p "Enter GitHub repository URL: " theme_url
+        if [[ -n "$theme_url" ]]; then
+            theme_name=$(basename "$theme_url" .git)
+            if git clone "$theme_url" "data/CTFd/themes/$theme_name" 2>/dev/null; then
+                echo "✓ Successfully installed $theme_name theme"
+                echo "Restart CTFd to see new theme: docker compose restart"
+            else
+                echo "Failed to clone theme repository"
+            fi
+        fi
+        ;;
+    3)
+        echo "Available themes to remove:"
+        if [ -d "data/CTFd/themes" ]; then
+            ls -1 data/CTFd/themes/
+            read -p "Enter theme name to remove: " theme_name
+            if [[ -n "$theme_name" ]] && [[ -d "data/CTFd/themes/$theme_name" ]]; then
+                rm -rf "data/CTFd/themes/$theme_name"
+                echo "✓ Removed $theme_name theme"
+            else
+                echo "Theme not found"
+            fi
+        else
+            echo "No themes directory found"
+        fi
+        ;;
+    4)
+        echo "Exiting..."
+        exit 0
+        ;;
+    *)
+        echo "Invalid option"
+        ;;
+esac
+EOF
+
     # Health check script
     cat > "$INSTALL_DIR/health-ctfd.sh" << 'EOF'
 #!/bin/bash
@@ -927,11 +1108,13 @@ EOF
     log "  Backup: $INSTALL_DIR/backup-ctfd.sh"
     log "  Health: $INSTALL_DIR/health-ctfd.sh"
     log "  Fix: $INSTALL_DIR/fix-ctfd.sh"
+    log "  Themes: $INSTALL_DIR/manage-themes.sh"
     log ""
     log "${GREEN}Next Steps:${NC}"
     log "  1. Visit https://$DOMAIN/setup"
     log "  2. Create admin account"
     log "  3. Configure CTFd settings"
+    log "  4. Change theme in Admin Panel > Configuration > Theme (if themes installed)"
     log ""
     log "${YELLOW}Azure NSG Reminder:${NC}"
     log "  Ensure ports 80 and 443 are open in Network Security Group"
