@@ -1,0 +1,72 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# CTFd data
+data/
+CTFd/
+
+# Backup files
+*.tar.gz
+*.zip
+*.bak
+*-backup-*
+ctfd-backups/
+
+# Log files
+*.log
+logs/
+/tmp/ctfd-*
+
+# Docker volumes
+docker-compose.override.yml
+.docker/
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.csr
+/etc/letsencrypt/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vagrant/
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+.project
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Sensitive files
+credentials.txt
+passwords.txt
+secrets/
+
+# Test files
+test-*
+*.test
+
+# Generated documentation
+docs/_build/
+*.pdf
