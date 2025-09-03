@@ -1032,12 +1032,16 @@ EOF
                 log "${GREEN}✓ Auto-renewal configured${NC}"
             else
                 log "${RED}✗ SSL certificate request failed${NC}"
-                log "${YELLOW}SSL certificate failed - continuing without HTTPS${NC}"
-                log "${YELLOW}CTFd will be available via HTTP only${NC}"
-                log "${YELLOW}To add SSL later:${NC}"
-                log "${YELLOW}  1. Disable Cloudflare proxy temporarily${NC}"
+                log "${RED}HTTPS is required for CTF platform security${NC}"
+                log "${RED}Please fix SSL configuration before proceeding${NC}"
+                log ""
+                log "${YELLOW}To fix SSL:${NC}"
+                log "${YELLOW}  1. Disable Cloudflare proxy temporarily (gray cloud)${NC}"
                 log "${YELLOW}  2. Run: sudo certbot --nginx -d $DOMAIN${NC}"
                 log "${YELLOW}  3. Re-enable Cloudflare proxy and set SSL mode to 'Full (strict)'${NC}"
+                log ""
+                log "${RED}Deployment stopped - SSL is mandatory${NC}"
+                exit 1
             fi
     else
         log "${GREEN}Direct DNS configuration detected${NC}"
@@ -1108,9 +1112,13 @@ EOF
                     nginx -t
                 fi
             else
-                log "${RED}SSL setup failed. Manual setup required.${NC}"
-                log "${YELLOW}To set up SSL manually later:${NC}"
+                log "${RED}SSL setup failed. HTTPS is mandatory for CTF security.${NC}"
+                log "${YELLOW}To fix SSL:${NC}"
                 log "${YELLOW}  1. Run: sudo certbot --nginx -d $DOMAIN${NC}"
+                log "${YELLOW}  2. Ensure DNS points directly to this server${NC}"
+                log ""
+                log "${RED}Deployment stopped - SSL is required${NC}"
+                exit 1
             fi
         fi
     fi
