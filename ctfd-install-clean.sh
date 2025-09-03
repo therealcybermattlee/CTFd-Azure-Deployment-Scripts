@@ -830,59 +830,82 @@ EOF
         fi
     fi
     
-    # Step 8: SSL Certificate (optional)
+    # Step 8: SSL Certificate Setup
     log "\n${GREEN}[Step 8/8] SSL Certificate Setup with Let's Encrypt...${NC}"
     PUBLIC_IP=$(curl -s ifconfig.me)
     DNS_IP=$(dig +short $DOMAIN | tail -n1)
     
-    if [ "$DNS_IP" == "$PUBLIC_IP" ]; then
-        log "${GREEN}DNS is properly configured. Setting up SSL with Let's Encrypt...${NC}"
+    # Check if Cloudflare is being used
+    USING_CLOUDFLARE=false
+    if curl -s "https://api.cloudflare.com/client/v4/ips" | grep -q "$DNS_IP" 2>/dev/null; then
+        USING_CLOUDFLARE=true
+        log "${BLUE}Cloudflare proxy detected for $DOMAIN${NC}"
+    elif [ "$DNS_IP" != "$PUBLIC_IP" ]; then
+        log "${YELLOW}Domain points to $DNS_IP (not server IP $PUBLIC_IP)${NC}"
+        log "${YELLOW}This may be a CDN/proxy service${NC}"
+    fi
+    
+    # Always attempt SSL certificate setup
+    log "${GREEN}Setting up SSL certificate...${NC}"
+    
+    # Check if certbot is installed
+    if ! command_exists certbot; then
+        log "${YELLOW}Installing certbot...${NC}"
+        apt-get install -y certbot python3-certbot-nginx
+    fi
+    
+    # For Cloudflare or other proxies, we need different approach
+    if [ "$USING_CLOUDFLARE" = true ] || [ "$DNS_IP" != "$PUBLIC_IP" ]; then
+        log "${YELLOW}Proxy/CDN detected - Using HTTP validation with temporary bypass...${NC}"
         
-        # Check if certbot is installed
-        if ! command_exists certbot; then
-            log "${YELLOW}Certbot not found. Installing...${NC}"
-            apt-get install -y certbot python3-certbot-nginx
-        fi
+        # Create webroot directory for validation
+        mkdir -p /var/www/certbot
         
-        # Attempt to get SSL certificate
-        log "${YELLOW}Requesting SSL certificate from Let's Encrypt...${NC}"
-        certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email $EMAIL --redirect || {
-            log "${YELLOW}Automatic SSL setup failed. Trying with webroot method...${NC}"
-            
-            # Create webroot directory
-            mkdir -p /var/www/certbot
-            
-            # Update nginx config for certbot challenge
-            cat > /etc/nginx/sites-available/ctfd << EOF
+        # Configure nginx for HTTP validation (no redirect during validation)
+        cat > /etc/nginx/sites-available/ctfd << EOF
 server {
     listen 80;
     server_name $DOMAIN;
-
+    
+    # Let's Encrypt validation
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
-
+    
+    # Regular traffic
     location / {
         proxy_pass http://localhost:8000;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
     }
 }
 EOF
-            nginx -t && systemctl reload nginx
-            
-            # Try certbot with webroot
-            certbot certonly --webroot -w /var/www/certbot -d $DOMAIN --non-interactive --agree-tos --email $EMAIL || {
-                log "${RED}SSL setup failed. Manual setup required.${NC}"
-                log "${YELLOW}To set up SSL manually later:${NC}"
-                log "${YELLOW}  1. Ensure DNS points to $PUBLIC_IP${NC}"
-                log "${YELLOW}  2. Run: sudo certbot --nginx -d $DOMAIN${NC}"
-            }
-            
-            # If cert was obtained, configure nginx for SSL
-            if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+        
+        # Reload nginx configuration
+        if nginx -t; then
+            systemctl reload nginx
+            log "${GREEN}✓ Nginx configured for SSL validation${NC}"
+        else
+            log "${RED}✗ Nginx configuration error${NC}"
+            nginx -t
+            return 1
+        fi
+        
+        log "${YELLOW}Important: If using Cloudflare, temporarily set DNS to 'DNS Only' (gray cloud) for validation${NC}"
+        read -p "$(echo -e "${YELLOW}Have you disabled Cloudflare proxy for SSL validation? [y/N]:${NC} ") " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log "${YELLOW}Skipping SSL setup. You can run this later: sudo certbot --nginx -d $DOMAIN${NC}"
+        else
+            # Try to get SSL certificate with webroot method
+            log "${YELLOW}Requesting SSL certificate...${NC}"
+            if certbot certonly --webroot -w /var/www/certbot -d $DOMAIN --non-interactive --agree-tos --email $EMAIL; then
+                log "${GREEN}✓ SSL certificate obtained${NC}"
+                
+                # Configure nginx with SSL
                 cat > /etc/nginx/sites-available/ctfd << EOF
 server {
     listen 80;
@@ -902,7 +925,6 @@ server {
     ssl_prefer_server_ciphers on;
 
     client_max_body_size 100M;
-    client_body_timeout 60s;
 
     location / {
         proxy_pass http://localhost:8000;
@@ -916,38 +938,113 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
-        
-        # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
     }
 }
 EOF
-                nginx -t && systemctl reload nginx
-                log "${GREEN}✓ SSL certificate installed successfully!${NC}"
-                log "${GREEN}CTFd is now accessible at: https://$DOMAIN${NC}"
+                
+                # Test and reload nginx
+                if nginx -t; then
+                    systemctl reload nginx
+                    log "${GREEN}✓ SSL configuration applied${NC}"
+                    
+                    # Test SSL setup
+                    log "${YELLOW}Testing SSL setup...${NC}"
+                    if curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN" --max-time 10 | grep -q "200\|30"; then
+                        log "${GREEN}✓ SSL setup successful!${NC}"
+                        log "${YELLOW}You can now re-enable Cloudflare proxy (orange cloud) and set SSL mode to 'Full (strict)'${NC}"
+                    else
+                        log "${YELLOW}⚠ SSL test inconclusive - please verify manually${NC}"
+                    fi
+                else
+                    log "${RED}✗ Nginx SSL configuration error${NC}"
+                    nginx -t
+                fi
+                
+                # Setup auto-renewal
+                (crontab -l 2>/dev/null; echo "0 0,12 * * * certbot renew --quiet && systemctl reload nginx") | crontab -
+                log "${GREEN}✓ Auto-renewal configured${NC}"
+            else
+                log "${RED}✗ SSL certificate request failed${NC}"
+                log "${YELLOW}Manual setup required. Try:${NC}"
+                log "${YELLOW}  1. Disable Cloudflare proxy (gray cloud)${NC}"
+                log "${YELLOW}  2. Run: sudo certbot --nginx -d $DOMAIN${NC}"
+                log "${YELLOW}  3. Re-enable Cloudflare proxy and set SSL mode to 'Full (strict)'${NC}"
             fi
-        }
-        
-        # Set up auto-renewal
-        if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-            log "${GREEN}Setting up automatic SSL renewal...${NC}"
-            (crontab -l 2>/dev/null; echo "0 0,12 * * * certbot renew --quiet && systemctl reload nginx") | crontab -
-            log "${GREEN}✓ Auto-renewal configured (runs twice daily)${NC}"
         fi
     else
-        log "${YELLOW}DNS not configured correctly for SSL setup.${NC}"
-        log "${YELLOW}Current server IP: $PUBLIC_IP${NC}"
-        log "${YELLOW}Domain $DOMAIN points to: $DNS_IP${NC}"
-        log "${RED}Please update your DNS A record to point to $PUBLIC_IP${NC}"
-        log ""
-        log "${YELLOW}After fixing DNS, you can set up SSL by running:${NC}"
-        log "${GREEN}sudo certbot --nginx -d $DOMAIN${NC}"
-        log ""
-        log "${YELLOW}For now, CTFd is accessible at:${NC}"
-        log "${GREEN}  http://$PUBLIC_IP${NC}"
-        log "${GREEN}  http://localhost:8000 (from the server)${NC}"
+        log "${GREEN}Direct DNS configuration detected${NC}"
+        
+        # Direct DNS - standard SSL setup
+        log "${YELLOW}Requesting SSL certificate from Let's Encrypt...${NC}"
+        if certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email $EMAIL --redirect; then
+            log "${GREEN}✓ SSL certificate installed and configured${NC}"
+            # Setup auto-renewal
+            (crontab -l 2>/dev/null; echo "0 0,12 * * * certbot renew --quiet && systemctl reload nginx") | crontab -
+            log "${GREEN}✓ Auto-renewal configured${NC}"
+        else
+            log "${YELLOW}Automatic SSL setup failed. Trying with webroot method...${NC}"
+            
+            # Create webroot directory
+            mkdir -p /var/www/certbot
+            
+            # Try webroot method for direct DNS
+            log "${YELLOW}Trying webroot method for SSL certificate...${NC}"
+            if certbot certonly --webroot -w /var/www/certbot -d $DOMAIN --non-interactive --agree-tos --email $EMAIL; then
+                log "${GREEN}✓ SSL certificate obtained${NC}"
+                
+                # Configure nginx with SSL
+                cat > /etc/nginx/sites-available/ctfd << EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$server_name\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN;
+
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    client_max_body_size 100M;
+
+    location / {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+EOF
+                
+                if nginx -t; then
+                    systemctl reload nginx
+                    log "${GREEN}✓ SSL certificate installed and configured${NC}"
+                    # Setup auto-renewal
+                    (crontab -l 2>/dev/null; echo "0 0,12 * * * certbot renew --quiet && systemctl reload nginx") | crontab -
+                    log "${GREEN}✓ Auto-renewal configured${NC}"
+                else
+                    log "${RED}✗ Nginx SSL configuration error${NC}"
+                    nginx -t
+                fi
+            else
+                log "${RED}SSL setup failed. Manual setup required.${NC}"
+                log "${YELLOW}To set up SSL manually later:${NC}"
+                log "${YELLOW}  1. Run: sudo certbot --nginx -d $DOMAIN${NC}"
+            fi
+        fi
     fi
     
     # Create management scripts
