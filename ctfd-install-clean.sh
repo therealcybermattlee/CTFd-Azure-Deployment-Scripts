@@ -964,15 +964,12 @@ EOF
             return 1
         fi
         
-        log "${YELLOW}Important: If using Cloudflare, temporarily set DNS to 'DNS Only' (gray cloud) for validation${NC}"
-        read -p "$(echo -e "${YELLOW}Have you disabled Cloudflare proxy for SSL validation? [y/N]:${NC} ") " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            log "${YELLOW}Skipping SSL setup. You can run this later: sudo certbot --nginx -d $DOMAIN${NC}"
-        else
-            # Try to get SSL certificate with webroot method
-            log "${YELLOW}Requesting SSL certificate...${NC}"
-            if certbot certonly --webroot -w /var/www/certbot -d $DOMAIN --non-interactive --agree-tos --email $EMAIL; then
+        log "${YELLOW}Cloudflare detected - attempting automatic SSL setup...${NC}"
+        log "${YELLOW}Note: You may need to set Cloudflare SSL mode to 'Full (strict)' after this completes${NC}"
+        
+        # Try to get SSL certificate with webroot method
+        log "${YELLOW}Requesting SSL certificate...${NC}"
+        if certbot certonly --webroot -w /var/www/certbot -d $DOMAIN --non-interactive --agree-tos --email $EMAIL; then
                 log "${GREEN}✓ SSL certificate obtained${NC}"
                 
                 # Configure nginx with SSL
@@ -1035,12 +1032,13 @@ EOF
                 log "${GREEN}✓ Auto-renewal configured${NC}"
             else
                 log "${RED}✗ SSL certificate request failed${NC}"
-                log "${YELLOW}Manual setup required. Try:${NC}"
-                log "${YELLOW}  1. Disable Cloudflare proxy (gray cloud)${NC}"
+                log "${YELLOW}SSL certificate failed - continuing without HTTPS${NC}"
+                log "${YELLOW}CTFd will be available via HTTP only${NC}"
+                log "${YELLOW}To add SSL later:${NC}"
+                log "${YELLOW}  1. Disable Cloudflare proxy temporarily${NC}"
                 log "${YELLOW}  2. Run: sudo certbot --nginx -d $DOMAIN${NC}"
                 log "${YELLOW}  3. Re-enable Cloudflare proxy and set SSL mode to 'Full (strict)'${NC}"
             fi
-        fi
     else
         log "${GREEN}Direct DNS configuration detected${NC}"
         
@@ -1114,6 +1112,24 @@ EOF
                 log "${YELLOW}To set up SSL manually later:${NC}"
                 log "${YELLOW}  1. Run: sudo certbot --nginx -d $DOMAIN${NC}"
             fi
+        fi
+    fi
+    
+    # Final connectivity verification
+    log "\n${GREEN}Verifying deployment...${NC}"
+    sleep 3
+    if curl -s -o /dev/null -w "%{http_code}" "http://localhost:8000" --max-time 10 | grep -q "200\|30"; then
+        log "${GREEN}✓ CTFd is responding on HTTP${NC}"
+    else
+        log "${YELLOW}⚠ CTFd may still be starting up${NC}"
+    fi
+    
+    # Check SSL if configured
+    if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+        if curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN" --max-time 10 | grep -q "200\|30"; then
+            log "${GREEN}✓ SSL is working${NC}"
+        else
+            log "${YELLOW}⚠ SSL may need Cloudflare configuration${NC}"
         fi
     fi
     
