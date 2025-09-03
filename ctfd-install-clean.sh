@@ -756,8 +756,17 @@ EOF
     
     log "${GREEN}✓ Credentials generated${NC}"
     
-    # Step 4.5: Setup custom themes
-    setup_custom_themes
+    # Step 4.5: Setup custom themes (optional)
+    echo ""
+    read -p "$(echo -e "${YELLOW}Install community themes? [y/N]:${NC} ") " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        setup_custom_themes
+    else
+        log "${GREEN}Skipping themes - using default CTFd theme${NC}"
+        # Ensure themes directory exists even when empty
+        touch data/CTFd/themes/.gitkeep
+    fi
     
     # Step 5: Create docker-compose.yml
     log "\n${GREEN}[Step 5/8] Creating Docker configuration...${NC}"
