@@ -125,25 +125,64 @@ install_popular_themes() {
     if git clone --recursive https://github.com/CTFd/themes.git temp_themes; then
         log "${GREEN}✓ Downloaded community themes repository${NC}"
         
-        # List of popular themes to install
-        POPULAR_THEMES=("dark" "neon" "pixo" "odin" "crimson")
+        # Function to validate theme has required templates
+        validate_theme() {
+            local theme_dir="$1"
+            local theme_name="$2"
+            
+            # Required templates for a complete CTFd theme
+            local required_templates=("base.html" "setup.html" "login.html")
+            
+            for template in "${required_templates[@]}"; do
+                if ! find "$theme_dir" -name "$template" -type f | grep -q .; then
+                    log "${YELLOW}⚠ Theme $theme_name missing required template: $template${NC}"
+                    return 1
+                fi
+            done
+            
+            return 0
+        }
         
-        for theme in "${POPULAR_THEMES[@]}"; do
-            if [ -d "temp_themes/$theme" ]; then
-                cp -r "temp_themes/$theme" "data/CTFd/themes/"
-                log "${GREEN}✓ Installed $theme theme${NC}"
-            else
-                # Look for theme directories with fuzzy matching
-                theme_dir=$(find temp_themes -name "*$theme*" -type d | head -1)
-                if [ -n "$theme_dir" ] && [ -d "$theme_dir" ]; then
-                    theme_name=$(basename "$theme_dir")
-                    cp -r "$theme_dir" "data/CTFd/themes/"
-                    log "${GREEN}✓ Installed $theme_name theme${NC}"
+        # List of themes to install (only verified compatible ones)
+        log "${YELLOW}Installing verified compatible themes...${NC}"
+        themes_installed=0
+        
+        # Try to install core theme from submodules first (most reliable)
+        if [ -d "temp_themes/CTFd-Dark-Theme" ]; then
+            if validate_theme "temp_themes/CTFd-Dark-Theme" "dark"; then
+                cp -r "temp_themes/CTFd-Dark-Theme" "data/CTFd/themes/dark"
+                log "${GREEN}✓ Installed dark theme (CTFd-Dark-Theme)${NC}"
+                themes_installed=$((themes_installed + 1))
+            fi
+        fi
+        
+        # Try official themes from submodules
+        THEME_MAPPINGS=(
+            "ctfd-neon-theme:neon"
+            "pixo:pixo" 
+            "CTFD-odin-theme:odin"
+            "CTFD-crimson-theme:crimson"
+        )
+        
+        for mapping in "${THEME_MAPPINGS[@]}"; do
+            IFS=':' read -r source_name target_name <<< "$mapping"
+            if [ -d "temp_themes/$source_name" ]; then
+                if validate_theme "temp_themes/$source_name" "$target_name"; then
+                    cp -r "temp_themes/$source_name" "data/CTFd/themes/$target_name"
+                    log "${GREEN}✓ Installed $target_name theme ($source_name)${NC}"
+                    themes_installed=$((themes_installed + 1))
                 else
-                    log "${YELLOW}⚠ Theme $theme not found, skipping${NC}"
+                    log "${YELLOW}⚠ Theme $source_name failed validation, skipping${NC}"
                 fi
             fi
         done
+        
+        if [ $themes_installed -eq 0 ]; then
+            log "${YELLOW}⚠ No compatible themes found in repository${NC}"
+            log "${YELLOW}CTFd will use default theme${NC}"
+        else
+            log "${GREEN}✓ Installed $themes_installed compatible themes${NC}"
+        fi
         
         # Clean up
         rm -rf temp_themes
@@ -154,22 +193,44 @@ install_popular_themes() {
         log "${RED}✗ Failed to download themes repository${NC}"
         log "${YELLOW}Attempting to download individual popular themes...${NC}"
         
-        # Fallback: try to download individual popular themes directly
-        POPULAR_THEME_REPOS=(
+        # Fallback: try to download individual verified themes directly
+        log "${YELLOW}Fallback: trying individual theme repositories...${NC}"
+        
+        # Function to validate and install individual theme
+        install_theme_repo() {
+            local repo_url="$1"
+            local theme_name="$2"
+            local temp_dir="temp_$theme_name"
+            
+            log "${YELLOW}Trying to install $theme_name theme...${NC}"
+            if git clone "$repo_url" "$temp_dir" 2>/dev/null; then
+                if validate_theme "$temp_dir" "$theme_name"; then
+                    cp -r "$temp_dir" "data/CTFd/themes/$theme_name"
+                    rm -rf "$temp_dir"
+                    log "${GREEN}✓ Installed $theme_name theme${NC}"
+                    return 0
+                else
+                    log "${YELLOW}⚠ Theme $theme_name failed validation${NC}"
+                    rm -rf "$temp_dir"
+                    return 1
+                fi
+            else
+                log "${YELLOW}⚠ Failed to download $theme_name theme${NC}"
+                rm -rf "$temp_dir" 2>/dev/null || true
+                return 1
+            fi
+        }
+        
+        # Only try the most reliable theme - CTFd's official dark theme
+        FALLBACK_THEMES=(
             "https://github.com/CTFd/CTFd-Dark-Theme.git:dark"
-            "https://github.com/chainflag/ctfd-neon-theme.git:neon"
-            "https://github.com/hmrserver/pixo.git:pixo"
         )
         
         themes_installed=0
-        for theme_repo in "${POPULAR_THEME_REPOS[@]}"; do
+        for theme_repo in "${FALLBACK_THEMES[@]}"; do
             IFS=':' read -r repo_url theme_name <<< "$theme_repo"
-            log "${YELLOW}Trying to install $theme_name theme...${NC}"
-            if git clone "$repo_url" "data/CTFd/themes/$theme_name" 2>/dev/null; then
-                log "${GREEN}✓ Installed $theme_name theme${NC}"
+            if install_theme_repo "$repo_url" "$theme_name"; then
                 themes_installed=$((themes_installed + 1))
-            else
-                log "${YELLOW}⚠ Failed to install $theme_name theme${NC}"
             fi
         done
         
@@ -1126,25 +1187,54 @@ case $choice in
         mkdir -p ~/.ssh
         ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
         if git clone --recursive https://github.com/CTFd/themes.git temp_themes; then
-            POPULAR_THEMES=("dark" "neon" "pixo" "odin" "crimson")
-            for theme in "${POPULAR_THEMES[@]}"; do
-                if [ -d "temp_themes/$theme" ]; then
-                    cp -r "temp_themes/$theme" "data/CTFd/themes/"
-                    echo "✓ Installed $theme theme"
-                else
-                    # Look for theme directories with fuzzy matching
-                    theme_dir=$(find temp_themes -name "*$theme*" -type d | head -1)
-                    if [ -n "$theme_dir" ] && [ -d "$theme_dir" ]; then
-                        theme_name=$(basename "$theme_dir")
-                        cp -r "$theme_dir" "data/CTFd/themes/"
-                        echo "✓ Installed $theme_name theme"
+            # Validate theme function (same as install script)
+            validate_theme_mgr() {
+                local theme_dir="$1"
+                local theme_name="$2"
+                local required_templates=("base.html" "setup.html" "login.html")
+                
+                for template in "${required_templates[@]}"; do
+                    if ! find "$theme_dir" -name "$template" -type f | grep -q .; then
+                        echo "⚠ Theme $theme_name missing required template: $template"
+                        return 1
+                    fi
+                done
+                return 0
+            }
+            
+            echo "Installing verified compatible themes..."
+            themes_installed=0
+            
+            # Install only verified themes with validation
+            THEME_MAPPINGS=(
+                "CTFd-Dark-Theme:dark"
+                "ctfd-neon-theme:neon"
+                "pixo:pixo"
+                "CTFD-odin-theme:odin"
+                "CTFD-crimson-theme:crimson"
+            )
+            
+            for mapping in "${THEME_MAPPINGS[@]}"; do
+                IFS=':' read -r source_name target_name <<< "$mapping"
+                if [ -d "temp_themes/$source_name" ]; then
+                    if validate_theme_mgr "temp_themes/$source_name" "$target_name"; then
+                        cp -r "temp_themes/$source_name" "data/CTFd/themes/$target_name"
+                        echo "✓ Installed $target_name theme ($source_name)"
+                        themes_installed=$((themes_installed + 1))
                     else
-                        echo "⚠ Theme $theme not found, skipping"
+                        echo "⚠ Theme $source_name failed validation, skipping"
                     fi
                 fi
             done
+            
             rm -rf temp_themes
-            echo "Restart CTFd to see new themes: docker compose restart"
+            
+            if [ $themes_installed -gt 0 ]; then
+                echo "✓ Installed $themes_installed compatible themes"
+                echo "Restart CTFd to see new themes: docker compose restart"
+            else
+                echo "⚠ No compatible themes found in repository"
+            fi
         else
             echo "Failed to download themes repository"
         fi
@@ -1157,9 +1247,18 @@ case $choice in
             mkdir -p ~/.ssh
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
             theme_name=$(basename "$theme_url" .git)
-            if git clone "$theme_url" "data/CTFd/themes/$theme_name"; then
-                echo "✓ Successfully installed $theme_name theme"
-                echo "Restart CTFd to see new theme: docker compose restart"
+            if git clone "$theme_url" "temp_$theme_name"; then
+                # Validate theme before installing
+                if validate_theme_mgr "temp_$theme_name" "$theme_name"; then
+                    cp -r "temp_$theme_name" "data/CTFd/themes/$theme_name"
+                    rm -rf "temp_$theme_name"
+                    echo "✓ Successfully installed $theme_name theme"
+                    echo "Restart CTFd to see new theme: docker compose restart"
+                else
+                    echo "⚠ Theme $theme_name failed validation - missing required templates"
+                    echo "This theme may not be compatible with CTFd"
+                    rm -rf "temp_$theme_name"
+                fi
             else
                 echo "Failed to clone theme repository"
             fi
