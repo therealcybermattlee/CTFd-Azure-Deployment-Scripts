@@ -166,13 +166,14 @@ remove_nginx_config() {
         log "${GREEN}✓ Restored default nginx site${NC}"
     fi
     
-    # Remove SSL certificates if they exist
+    # Preserve SSL certificates to avoid Let's Encrypt rate limits
     DOMAIN=$(grep "DOMAIN=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d'=' -f2)
     if [ ! -z "$DOMAIN" ] && [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
         log "${YELLOW}Found SSL certificates for $DOMAIN${NC}"
         if [ "$uninstall_mode" == "1" ]; then
-            certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
-            log "${GREEN}✓ Removed SSL certificates${NC}"
+            log "${YELLOW}⚠ SSL certificates will be PRESERVED to avoid Let's Encrypt rate limits${NC}"
+            log "${YELLOW}  To manually remove: sudo certbot delete --cert-name $DOMAIN${NC}"
+            log "${GREEN}✓ Keeping SSL certificates to prevent rate limiting${NC}"
         else
             log "${YELLOW}Keeping SSL certificates (mode: $uninstall_mode)${NC}"
         fi

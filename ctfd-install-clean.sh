@@ -71,6 +71,32 @@ generate_password() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-25
 }
 
+# Function to check if valid SSL certificate exists
+check_existing_certificate() {
+    local domain="$1"
+    local cert_path="/etc/letsencrypt/live/$domain/fullchain.pem"
+    
+    if [ ! -f "$cert_path" ]; then
+        return 1  # No certificate exists
+    fi
+    
+    # Check if certificate is still valid (not expired)
+    if ! openssl x509 -checkend 86400 -noout -in "$cert_path" 2>/dev/null; then
+        log "${YELLOW}Existing certificate is expired or expiring soon${NC}"
+        return 1  # Certificate expired or expiring within 24 hours
+    fi
+    
+    # Check if certificate matches domain
+    local cert_domain=$(openssl x509 -in "$cert_path" -noout -subject 2>/dev/null | grep -oP 'CN=\K[^/]*' || echo "")
+    if [ "$cert_domain" != "$domain" ]; then
+        log "${YELLOW}Existing certificate is for different domain: $cert_domain${NC}"
+        return 1  # Certificate doesn't match domain
+    fi
+    
+    log "${GREEN}✓ Found valid existing SSL certificate for $domain${NC}"
+    return 0  # Valid certificate exists
+}
+
 # Function to setup custom themes
 setup_custom_themes() {
     log "${GREEN}[*] Theme Setup...${NC}"
@@ -756,17 +782,22 @@ EOF
     
     log "${GREEN}✓ Credentials generated${NC}"
     
-    # Step 4.5: Setup custom themes (optional)
+    # Step 4.5: Setup custom themes (optional - DISABLED BY DEFAULT)
     echo ""
-    read -p "$(echo -e "${YELLOW}Install community themes? [y/N]:${NC} ") " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        setup_custom_themes
-    else
-        log "${GREEN}Skipping themes - using default CTFd theme${NC}"
-        # Ensure themes directory exists even when empty
-        touch data/CTFd/themes/.gitkeep
-    fi
+    log "${YELLOW}Theme Installation:${NC}"
+    log "${YELLOW}Skipping theme installation to prevent template errors${NC}"
+    log "${GREEN}Using default CTFd theme for stability${NC}"
+    log "${BLUE}You can install themes later using: $INSTALL_DIR/manage-themes.sh${NC}"
+    
+    # Ensure themes directory exists even when empty
+    touch data/CTFd/themes/.gitkeep
+    
+    # Uncomment the following to enable theme installation (not recommended during initial setup)
+    # read -p "$(echo -e "${YELLOW}Install community themes? [y/N]:${NC} ") " -n 1 -r
+    # echo
+    # if [[ $REPLY =~ ^[Yy]$ ]]; then
+    #     setup_custom_themes
+    # fi
     
     # Step 5: Create docker-compose.yml
     log "\n${GREEN}[Step 5/8] Creating Docker configuration...${NC}"
@@ -901,9 +932,71 @@ EOF
     fi
     
     # Step 8: SSL Certificate Setup
-    log "\n${GREEN}[Step 8/8] SSL Certificate Setup with Let's Encrypt...${NC}"
-    PUBLIC_IP=$(curl -s ifconfig.me)
-    DNS_IP=$(dig +short $DOMAIN | tail -n1)
+    log "\n${GREEN}[Step 8/8] SSL Certificate Setup...${NC}"
+    
+    # Check for existing valid certificate first
+    if check_existing_certificate "$DOMAIN"; then
+        log "${GREEN}Using existing SSL certificate for $DOMAIN${NC}"
+        log "${YELLOW}Configuring nginx to use existing certificate...${NC}"
+        
+        # Configure nginx with existing SSL certificate
+        cat > /etc/nginx/sites-available/ctfd << EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$server_name\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN;
+
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    client_max_body_size 100M;
+
+    location / {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+EOF
+        
+        # Test and reload nginx
+        if nginx -t; then
+            systemctl reload nginx
+            log "${GREEN}✓ SSL configuration applied with existing certificate${NC}"
+            log "${GREEN}✓ Avoided Let's Encrypt rate limit by reusing certificate${NC}"
+        else
+            log "${RED}✗ Nginx SSL configuration error${NC}"
+            nginx -t
+        fi
+        
+        # Ensure auto-renewal is configured
+        if ! crontab -l 2>/dev/null | grep -q "certbot renew"; then
+            (crontab -l 2>/dev/null; echo "0 0,12 * * * certbot renew --quiet && systemctl reload nginx") | crontab -
+            log "${GREEN}✓ Auto-renewal configured${NC}"
+        fi
+    else
+        # No existing certificate, proceed with new certificate request
+        log "${YELLOW}No valid existing certificate found. Requesting new certificate...${NC}"
+        
+        PUBLIC_IP=$(curl -s ifconfig.me)
+        DNS_IP=$(dig +short $DOMAIN | tail -n1)
     
     # Check if Cloudflare is being used
     USING_CLOUDFLARE=false
@@ -1122,6 +1215,7 @@ EOF
             fi
         fi
     fi
+    fi  # End of certificate check conditional
     
     # Final connectivity verification
     log "\n${GREEN}Verifying deployment...${NC}"
