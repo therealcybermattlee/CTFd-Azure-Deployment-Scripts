@@ -965,17 +965,52 @@ EOF
     # Step 6: Start Docker containers
     log "\n${GREEN}[Step 6/8] Starting Docker containers...${NC}"
     docker compose pull
-    docker compose up -d
     
-    # Wait for initialization
-    log "${YELLOW}Waiting for services to initialize...${NC}"
-    sleep 15
+    # Start database and cache first to ensure they're ready
+    log "${YELLOW}Starting database and cache services...${NC}"
+    docker compose up -d db cache
     
-    # Check status
+    # Wait for database to be fully ready
+    log "${YELLOW}Waiting for database to initialize...${NC}"
+    for i in {1..30}; do
+        if docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; then
+            log "${GREEN}✓ Database is ready${NC}"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            log "${RED}✗ Database failed to start within 60 seconds${NC}"
+            log "${YELLOW}Check logs: docker compose logs db${NC}"
+            exit 1
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo ""
+    
+    # Now start CTFd with database ready
+    log "${YELLOW}Starting CTFd application...${NC}"
+    docker compose up -d ctfd
+    
+    # Wait for CTFd to be ready
+    log "${YELLOW}Waiting for CTFd to initialize...${NC}"
+    for i in {1..30}; do
+        if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000 --max-time 5 | grep -q "200\|302"; then
+            log "${GREEN}✓ CTFd is ready${NC}"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            log "${YELLOW}⚠ CTFd may still be initializing. Check logs: docker compose logs ctfd${NC}"
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo ""
+    
+    # Check final status
     if docker compose ps | grep -q "running"; then
-        log "${GREEN}✓ Containers started successfully${NC}"
+        log "${GREEN}✓ All containers started successfully${NC}"
     else
-        log "${RED}✗ Container startup failed. Check logs: docker compose logs${NC}"
+        log "${RED}✗ Some containers failed to start. Check logs: docker compose logs${NC}"
     fi
     
     # Step 7: Configure nginx
