@@ -890,13 +890,53 @@ EOF
     # Step 6: Start Docker containers
     log "\n${GREEN}[Step 6/8] Starting Docker containers...${NC}"
     docker compose pull
-    docker compose up -d
     
-    # Wait for initialization
-    log "${YELLOW}Waiting for services to initialize...${NC}"
-    sleep 15
+    # Start database and cache first to avoid migration conflicts
+    log "${YELLOW}Starting database and cache services...${NC}"
+    docker compose up -d db cache
     
-    # Check status
+    # Wait for database to be ready
+    log "${YELLOW}Waiting for database to initialize...${NC}"
+    for i in {1..30}; do
+        if docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; then
+            log "${GREEN}✓ Database is ready${NC}"
+            break
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo ""
+    
+    # Now start CTFd with database ready
+    log "${YELLOW}Starting CTFd application...${NC}"
+    docker compose up -d ctfd
+    
+    # Wait for CTFd initialization
+    log "${YELLOW}Waiting for CTFd to initialize...${NC}"
+    for i in {1..30}; do
+        if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000 --max-time 5 | grep -q "200\|302"; then
+            log "${GREEN}✓ CTFd is ready${NC}"
+            break
+        fi
+        
+        # Check if CTFd is crashing
+        container_status=$(docker compose ps ctfd --format "{{.Status}}" 2>/dev/null || echo "unknown")
+        if echo "$container_status" | grep -q "Restarting\|Exited"; then
+            log "${RED}✗ CTFd container is crashing${NC}"
+            log "${YELLOW}Checking logs for migration issues...${NC}"
+            if docker compose logs ctfd 2>&1 | grep -q "Can't locate revision"; then
+                log "${RED}✗ Database migration conflict detected${NC}"
+                log "${YELLOW}This can happen with existing database data${NC}"
+                log "${YELLOW}Run ./fix-alembic-migration.sh to resolve${NC}"
+                break
+            fi
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo ""
+    
+    # Check final status
     if docker compose ps | grep -q "running"; then
         log "${GREEN}✓ Containers started successfully${NC}"
     else
