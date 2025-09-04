@@ -71,6 +71,77 @@ generate_password() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-25
 }
 
+# Function to update docker-compose with themes volume if themes exist
+update_docker_compose_with_themes() {
+    log "${YELLOW}Updating Docker configuration to include themes...${NC}"
+    
+    # Create docker-compose.yml with themes volume mount
+    cat > docker-compose.yml << 'EOF'
+services:
+  ctfd:
+    image: ctfd/ctfd:latest
+    container_name: ctfd
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=mysql+pymysql://ctfd:${DB_PASSWORD}@db:3306/ctfd
+      - REDIS_URL=redis://cache:6379
+      - WORKERS=4
+      - SERVER_NAME=${DOMAIN}
+      - REVERSE_PROXY=True
+      - SESSION_COOKIE_SECURE=True
+      - SESSION_COOKIE_HTTPONLY=True
+      - SESSION_COOKIE_SAMESITE=Lax
+      - LOG_FOLDER=/var/log/CTFd
+      - UPLOAD_FOLDER=/var/uploads
+    volumes:
+      - ./data/CTFd/logs:/var/log/CTFd
+      - ./data/CTFd/uploads:/var/uploads
+      - ./data/CTFd/themes:/opt/CTFd/CTFd/themes
+    depends_on:
+      - db
+      - cache
+    networks:
+      - ctfd_net
+
+  db:
+    image: mariadb:10.11
+    container_name: ctfd_db
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_USER=ctfd
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+      - MYSQL_DATABASE=ctfd
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --wait_timeout=28800, --log-warnings=0]
+    networks:
+      - ctfd_net
+
+  cache:
+    image: redis:7-alpine
+    container_name: ctfd_cache
+    restart: always
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - ctfd_net
+
+networks:
+  ctfd_net:
+    driver: bridge
+EOF
+
+    # Restart CTFd with themes enabled
+    log "${YELLOW}Restarting CTFd with themes support...${NC}"
+    docker compose restart ctfd
+    sleep 5
+    log "${GREEN}✓ Docker configuration updated with themes support${NC}"
+}
+
 
 # Function to check if valid SSL certificate exists
 check_existing_certificate() {
@@ -271,6 +342,8 @@ install_popular_themes() {
         else
             log "${GREEN}✓ Installed $themes_installed compatible themes${NC}"
             log "${YELLOW}Note: Only use themes in production after thorough testing${NC}"
+            # Update docker-compose to include themes volume now that themes exist
+            update_docker_compose_with_themes
         fi
         
         # Clean up
@@ -324,6 +397,8 @@ install_custom_theme_url() {
     if git clone "$theme_url" "data/CTFd/themes/$theme_name"; then
         log "${GREEN}✓ Successfully installed $theme_name theme${NC}"
         log "${YELLOW}You can activate it in CTFd Admin Panel > Configuration > Theme${NC}"
+        # Update docker-compose to include themes volume now that a theme exists
+        update_docker_compose_with_themes
     else
         log "${RED}✗ Failed to clone theme repository${NC}"
         log "${YELLOW}Please check the URL and try again manually${NC}"
@@ -852,7 +927,6 @@ services:
     volumes:
       - ./data/CTFd/logs:/var/log/CTFd
       - ./data/CTFd/uploads:/var/uploads
-      - ./data/CTFd/themes:/opt/CTFd/CTFd/themes
     depends_on:
       - db
       - cache
