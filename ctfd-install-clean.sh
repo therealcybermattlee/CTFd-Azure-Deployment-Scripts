@@ -71,6 +71,85 @@ generate_password() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-25
 }
 
+# Function to update CTFd configuration for HTTPS
+update_ctfd_for_https() {
+    log "${YELLOW}Configuring CTFd for HTTPS environment...${NC}"
+    
+    # Update docker-compose.yml with HTTPS settings
+    cat > docker-compose.yml << 'EOF'
+services:
+  ctfd:
+    image: ctfd/ctfd:3.6.0
+    container_name: ctfd
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=mysql+pymysql://ctfd:${DB_PASSWORD}@db:3306/ctfd
+      - REDIS_URL=redis://cache:6379
+      - WORKERS=4
+      - SERVER_NAME=${DOMAIN}
+      - REVERSE_PROXY=True
+      - SESSION_COOKIE_SECURE=True
+      - SESSION_COOKIE_HTTPONLY=True
+      - SESSION_COOKIE_SAMESITE=Lax
+      - LOG_FOLDER=/var/log/CTFd
+      - UPLOAD_FOLDER=/var/uploads
+    volumes:
+      - ./data/CTFd/logs:/var/log/CTFd
+      - ./data/CTFd/uploads:/var/uploads
+      - ./data/CTFd/themes:/opt/CTFd/CTFd/themes
+    depends_on:
+      - db
+      - cache
+    networks:
+      - ctfd_net
+
+  db:
+    image: mariadb:10.11
+    container_name: ctfd_db
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_USER=ctfd
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+      - MYSQL_DATABASE=ctfd
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --wait_timeout=28800, --log-warnings=0]
+    networks:
+      - ctfd_net
+
+  cache:
+    image: redis:7-alpine
+    container_name: ctfd_cache
+    restart: always
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - ctfd_net
+
+networks:
+  ctfd_net:
+    driver: bridge
+EOF
+    
+    # Restart CTFd with new configuration
+    log "${YELLOW}Restarting CTFd with HTTPS configuration...${NC}"
+    docker compose restart ctfd
+    
+    # Wait for restart
+    sleep 10
+    
+    # Verify CTFd is working
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:8000 --max-time 10 | grep -q "200\|302"; then
+        log "${GREEN}✓ CTFd updated for HTTPS${NC}"
+    else
+        log "${YELLOW}⚠ CTFd may need a moment to restart${NC}"
+    fi
+}
+
 # Function to check if valid SSL certificate exists
 check_existing_certificate() {
     local domain="$1"
@@ -841,11 +920,6 @@ services:
       - DATABASE_URL=mysql+pymysql://ctfd:${DB_PASSWORD}@db:3306/ctfd
       - REDIS_URL=redis://cache:6379
       - WORKERS=4
-      - SERVER_NAME=${DOMAIN}
-      - REVERSE_PROXY=True
-      - SESSION_COOKIE_SECURE=True
-      - SESSION_COOKIE_HTTPONLY=True
-      - SESSION_COOKIE_SAMESITE=Lax
       - LOG_FOLDER=/var/log/CTFd
       - UPLOAD_FOLDER=/var/uploads
     volumes:
@@ -1048,6 +1122,10 @@ EOF
             systemctl reload nginx
             log "${GREEN}✓ SSL configuration applied with existing certificate${NC}"
             log "${GREEN}✓ Avoided Let's Encrypt rate limit by reusing certificate${NC}"
+            
+            # Update CTFd configuration for HTTPS
+            log "${YELLOW}Updating CTFd configuration for HTTPS...${NC}"
+            update_ctfd_for_https
         else
             log "${RED}✗ Nginx SSL configuration error${NC}"
             nginx -t
@@ -1179,6 +1257,10 @@ EOF
                     if curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN" --max-time 10 | grep -q "200\|30"; then
                         log "${GREEN}✓ SSL setup successful!${NC}"
                         log "${YELLOW}You can now re-enable Cloudflare proxy (orange cloud) and set SSL mode to 'Full (strict)'${NC}"
+                        
+                        # Update CTFd configuration for HTTPS
+                        log "${YELLOW}Updating CTFd configuration for HTTPS...${NC}"
+                        update_ctfd_for_https
                     else
                         log "${YELLOW}⚠ SSL test inconclusive - please verify manually${NC}"
                     fi
