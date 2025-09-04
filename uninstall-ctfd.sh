@@ -134,7 +134,7 @@ remove_docker_containers() {
         
         # Optionally remove CTFd images
         if [ "$uninstall_mode" == "1" ]; then
-            docker rmi ctfd/ctfd:latest 2>/dev/null || true
+            docker rmi ctfd/ctfd:3.6.0 2>/dev/null || true
             docker rmi mariadb:10.11 2>/dev/null || true
             docker rmi redis:7-alpine 2>/dev/null || true
         fi

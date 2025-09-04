@@ -151,63 +151,125 @@ install_popular_themes() {
     if git clone --recursive https://github.com/CTFd/themes.git temp_themes; then
         log "${GREEN}✓ Downloaded community themes repository${NC}"
         
-        # Function to validate theme has required templates
+        # Function to validate theme compatibility with modern CTFd
         validate_theme() {
             local theme_dir="$1"
             local theme_name="$2"
             
-            # Required templates for a complete CTFd theme
-            local required_templates=("base.html" "setup.html" "login.html")
+            log "${BLUE}Validating theme: $theme_name${NC}"
             
-            for template in "${required_templates[@]}"; do
-                if ! find "$theme_dir" -name "$template" -type f | grep -q .; then
-                    log "${YELLOW}⚠ Theme $theme_name missing required template: $template${NC}"
-                    return 1
+            # Core required templates for CTFd 3.6+
+            local core_templates=(
+                "base.html" "challenge.html" "challenges.html" "config.html" 
+                "confirm.html" "login.html" "page.html" "register.html" 
+                "reset_password.html" "scoreboard.html" "settings.html"
+            )
+            
+            # Check core templates
+            local missing_templates=0
+            for template in "${core_templates[@]}"; do
+                if ! find "$theme_dir/templates" -name "$template" -type f 2>/dev/null | grep -q .; then
+                    log "${YELLOW}⚠ Missing core template: $template${NC}"
+                    missing_templates=$((missing_templates + 1))
                 fi
             done
             
+            # Check for templates directory structure
+            if [ ! -d "$theme_dir/templates" ]; then
+                log "${RED}✗ Missing templates directory${NC}"
+                return 1
+            fi
+            
+            if [ ! -d "$theme_dir/static" ]; then
+                log "${RED}✗ Missing static directory${NC}"
+                return 1
+            fi
+            
+            # Check for modern build system (indicators of compatibility)
+            local has_modern_build=false
+            if [ -f "$theme_dir/package.json" ] || [ -f "$theme_dir/vite.config.js" ]; then
+                has_modern_build=true
+                log "${GREEN}✓ Modern build system detected${NC}"
+            fi
+            
+            # Strict validation for core templates
+            if [ $missing_templates -gt 5 ]; then
+                log "${RED}✗ Theme missing too many core templates ($missing_templates/11)${NC}"
+                log "${RED}This theme is likely incompatible with CTFd 3.6+${NC}"
+                return 1
+            elif [ $missing_templates -gt 0 ] && [ "$has_modern_build" = false ]; then
+                log "${RED}✗ Theme missing templates and has no modern build system${NC}"
+                log "${RED}This theme is likely incompatible with CTFd 3.6+${NC}"
+                return 1
+            elif [ $missing_templates -gt 0 ]; then
+                log "${YELLOW}⚠ Theme missing $missing_templates templates but has modern build system${NC}"
+                log "${YELLOW}Theme may work but could have issues${NC}"
+            fi
+            
+            # Check for base.html specifically (critical)
+            if ! find "$theme_dir/templates" -name "base.html" -type f 2>/dev/null | grep -q .; then
+                log "${RED}✗ Critical: Missing base.html template${NC}"
+                return 1
+            fi
+            
+            log "${GREEN}✓ Theme validation passed${NC}"
             return 0
         }
         
-        # List of themes to install (only verified compatible ones)
-        log "${YELLOW}Installing verified compatible themes...${NC}"
+        # WARNING: Most community themes are incompatible with CTFd 3.6+
+        log "${YELLOW}Checking for CTFd 3.6+ compatible themes...${NC}"
+        log "${RED}Note: Most community themes are outdated and incompatible${NC}"
         themes_installed=0
         
-        # Try to install core theme from submodules first (most reliable)
-        if [ -d "temp_themes/CTFd-Dark-Theme" ]; then
-            if validate_theme "temp_themes/CTFd-Dark-Theme" "dark"; then
-                cp -r "temp_themes/CTFd-Dark-Theme" "data/CTFd/themes/dark"
-                log "${GREEN}✓ Installed dark theme (CTFd-Dark-Theme)${NC}"
-                themes_installed=$((themes_installed + 1))
-            fi
-        fi
-        
-        # Try official themes from submodules
-        THEME_MAPPINGS=(
-            "ctfd-neon-theme:neon"
-            "pixo:pixo" 
-            "CTFD-odin-theme:odin"
-            "CTFD-crimson-theme:crimson"
+        # Only attempt to install themes known to work with CTFd 3.6+
+        # Most themes in the repository are for older CTFd versions
+        COMPATIBLE_THEMES=(
+            # Add only verified CTFd 3.6+ compatible themes here
+            # Currently, most community themes are incompatible
         )
         
-        for mapping in "${THEME_MAPPINGS[@]}"; do
+        # Fallback: Try to install core-beta compatible themes only
+        LEGACY_THEME_MAPPINGS=(
+            # Disabled due to compatibility issues with CTFd 3.6+
+            # "ctfd-neon-theme:neon"     # Only works with CTFd 3.4.0
+            # "pixo:pixo"               # Pre-Bootstrap 5 era
+            # "CTFD-odin-theme:odin"    # Missing modern templates
+            # "CTFD-crimson-theme:crimson" # Likely incompatible
+        )
+        
+        # Try to install only verified compatible themes
+        for mapping in "${COMPATIBLE_THEMES[@]}"; do
             IFS=':' read -r source_name target_name <<< "$mapping"
             if [ -d "temp_themes/$source_name" ]; then
+                log "${BLUE}Testing theme: $source_name${NC}"
                 if validate_theme "temp_themes/$source_name" "$target_name"; then
-                    cp -r "temp_themes/$source_name" "data/CTFd/themes/$target_name"
-                    log "${GREEN}✓ Installed $target_name theme ($source_name)${NC}"
+                    # Safe installation: copy to temporary location first
+                    mkdir -p "temp_install_$target_name"
+                    cp -r "temp_themes/$source_name"/* "temp_install_$target_name/"
+                    
+                    # Set proper permissions
+                    chmod -R 755 "temp_install_$target_name"
+                    
+                    # Move to final location only if validation passed
+                    mv "temp_install_$target_name" "data/CTFd/themes/$target_name"
+                    log "${GREEN}✓ Successfully installed $target_name theme${NC}"
                     themes_installed=$((themes_installed + 1))
                 else
-                    log "${YELLOW}⚠ Theme $source_name failed validation, skipping${NC}"
+                    log "${RED}✗ Theme $source_name failed compatibility validation${NC}"
+                    rm -rf "temp_install_$target_name" 2>/dev/null || true
                 fi
+            else
+                log "${YELLOW}Theme $source_name not found in repository${NC}"
             fi
         done
         
         if [ $themes_installed -eq 0 ]; then
-            log "${YELLOW}⚠ No compatible themes found in repository${NC}"
-            log "${YELLOW}CTFd will use default theme${NC}"
+            log "${YELLOW}⚠ No CTFd 3.6+ compatible themes found in repository${NC}"
+            log "${GREEN}✓ CTFd will use the stable default core-beta theme${NC}"
+            log "${BLUE}This is recommended for stability and security${NC}"
         else
             log "${GREEN}✓ Installed $themes_installed compatible themes${NC}"
+            log "${YELLOW}Note: Only use themes in production after thorough testing${NC}"
         fi
         
         # Clean up
@@ -217,56 +279,21 @@ install_popular_themes() {
         log "${YELLOW}You can change themes in CTFd Admin Panel > Configuration > Theme${NC}"
     else
         log "${RED}✗ Failed to download themes repository${NC}"
-        log "${YELLOW}Attempting to download individual popular themes...${NC}"
+        log "${YELLOW}Note: Individual theme download disabled due to compatibility issues${NC}"
+        log "${BLUE}Most community themes are incompatible with CTFd 3.6+${NC}"
         
-        # Fallback: try to download individual verified themes directly
-        log "${YELLOW}Fallback: trying individual theme repositories...${NC}"
-        
-        # Function to validate and install individual theme
-        install_theme_repo() {
-            local repo_url="$1"
-            local theme_name="$2"
-            local temp_dir="temp_$theme_name"
-            
-            log "${YELLOW}Trying to install $theme_name theme...${NC}"
-            if git clone "$repo_url" "$temp_dir" 2>/dev/null; then
-                if validate_theme "$temp_dir" "$theme_name"; then
-                    cp -r "$temp_dir" "data/CTFd/themes/$theme_name"
-                    rm -rf "$temp_dir"
-                    log "${GREEN}✓ Installed $theme_name theme${NC}"
-                    return 0
-                else
-                    log "${YELLOW}⚠ Theme $theme_name failed validation${NC}"
-                    rm -rf "$temp_dir"
-                    return 1
-                fi
-            else
-                log "${YELLOW}⚠ Failed to download $theme_name theme${NC}"
-                rm -rf "$temp_dir" 2>/dev/null || true
-                return 1
-            fi
-        }
-        
-        # Only try the most reliable theme - CTFd's official dark theme
-        FALLBACK_THEMES=(
-            "https://github.com/CTFd/CTFd-Dark-Theme.git:dark"
-        )
+        # Individual theme installation DISABLED for compatibility
+        log "${YELLOW}Individual theme installation disabled${NC}"
+        log "${RED}Reason: Known community themes are incompatible with CTFd 3.6+${NC}"
+        log "${BLUE}CTFd will use the stable core-beta theme (recommended)${NC}"
+        log "${YELLOW}For custom themes, use themes compatible with:${NC}"
+        log "${YELLOW}  - Bootstrap 5${NC}"
+        log "${YELLOW}  - Alpine.js${NC}"
+        log "${YELLOW}  - Vite build system${NC}"
+        log "${YELLOW}  - CTFd 3.6+ template structure${NC}"
         
         themes_installed=0
-        for theme_repo in "${FALLBACK_THEMES[@]}"; do
-            IFS=':' read -r repo_url theme_name <<< "$theme_repo"
-            if install_theme_repo "$repo_url" "$theme_name"; then
-                themes_installed=$((themes_installed + 1))
-            fi
-        done
-        
-        if [ $themes_installed -gt 0 ]; then
-            log "${GREEN}✓ Successfully installed $themes_installed themes${NC}"
-        else
-            log "${YELLOW}No themes could be installed automatically${NC}"
-        fi
-        
-        log "${YELLOW}You can manually add more themes to: $INSTALL_DIR/data/CTFd/themes/${NC}"
+        log "${GREEN}✓ Theme installation completed (using default for stability)${NC}"
     fi
 }
 
@@ -804,7 +831,7 @@ EOF
     cat > docker-compose.yml << 'EOF'
 services:
   ctfd:
-    image: ctfd/ctfd:latest
+    image: ctfd/ctfd:3.6.0  # Pinned version for theme compatibility
     container_name: ctfd
     restart: always
     ports:
@@ -1289,18 +1316,26 @@ cd "$(dirname "$0")"
 
 echo "=== CTFd Theme Manager ==="
 echo ""
+echo "⚠️  COMPATIBILITY WARNING ⚠️"
+echo "Most community themes are incompatible with CTFd 3.6+"
+echo "Only install themes that support:"
+echo "  - Bootstrap 5"
+echo "  - Alpine.js"
+echo "  - Vite build system"
+echo "  - CTFd 3.6+ template structure"
+echo ""
 echo "Current themes installed:"
 if [ -d "data/CTFd/themes" ] && [ "$(ls -A data/CTFd/themes)" ]; then
     ls -la data/CTFd/themes/ | grep "^d" | awk '{print "  - " $9}' | grep -v "^\s*- \.$" | grep -v "^\s*- \.\.$"
 else
-    echo "  No custom themes installed"
+    echo "  Using default core-beta theme (RECOMMENDED)"
 fi
 
 echo ""
 echo "Theme management options:"
-echo "1) Install popular community themes"
-echo "2) Install theme from GitHub URL"
-echo "3) Remove a theme"
+echo "1) Install theme from GitHub URL (advanced users only)"
+echo "2) Remove a theme"
+echo "3) Test current theme compatibility"
 echo "4) Exit"
 echo ""
 
@@ -1308,90 +1343,94 @@ read -p "Select option [1-4]: " choice
 
 case $choice in
     1)
-        echo "Installing popular community themes..."
-        # Configure git and ensure GitHub host key is known
-        git config --global url."https://github.com/".insteadOf git@github.com: 2>/dev/null || true
-        mkdir -p ~/.ssh
-        ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-        if git clone --recursive https://github.com/CTFd/themes.git temp_themes; then
+        read -p "Enter GitHub repository URL:" theme_url
+        if [[ -n "$theme_url" ]]; then
+            echo "⚠ WARNING: Most community themes are incompatible with CTFd 3.6+"
+            echo "Proceeding with advanced installation..."
+            # Configure git and ensure GitHub host key is known
+            git config --global url."https://github.com/".insteadOf git@github.com: 2>/dev/null || true
+            mkdir -p ~/.ssh
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
             # Validate theme function (same as install script)
+            # Modern CTFd 3.6+ theme validation
             validate_theme_mgr() {
                 local theme_dir="$1"
                 local theme_name="$2"
-                local required_templates=("base.html" "setup.html" "login.html")
                 
-                for template in "${required_templates[@]}"; do
-                    if ! find "$theme_dir" -name "$template" -type f | grep -q .; then
-                        echo "⚠ Theme $theme_name missing required template: $template"
-                        return 1
+                echo "Validating theme: $theme_name for CTFd 3.6+ compatibility"
+                
+                # Core required templates for CTFd 3.6+
+                local core_templates=(
+                    "base.html" "challenge.html" "challenges.html" "config.html" 
+                    "confirm.html" "login.html" "page.html" "register.html" 
+                    "reset_password.html" "scoreboard.html" "settings.html"
+                )
+                
+                # Check directory structure
+                if [ ! -d "$theme_dir/templates" ]; then
+                    echo "✗ Missing templates directory"
+                    return 1
+                fi
+                
+                if [ ! -d "$theme_dir/static" ]; then
+                    echo "✗ Missing static directory"
+                    return 1
+                fi
+                
+                # Check core templates
+                local missing_templates=0
+                for template in "${core_templates[@]}"; do
+                    if ! find "$theme_dir/templates" -name "$template" -type f 2>/dev/null | grep -q .; then
+                        echo "⚠ Missing: $template"
+                        missing_templates=$((missing_templates + 1))
                     fi
                 done
+                
+                # Check for modern build system
+                local has_modern_build=false
+                if [ -f "$theme_dir/package.json" ] || [ -f "$theme_dir/vite.config.js" ]; then
+                    has_modern_build=true
+                    echo "✓ Modern build system detected"
+                fi
+                
+                # Validation logic
+                if [ $missing_templates -gt 5 ]; then
+                    echo "✗ Too many missing templates ($missing_templates/11) - likely incompatible"
+                    return 1
+                elif [ $missing_templates -gt 0 ] && [ "$has_modern_build" = false ]; then
+                    echo "✗ Missing templates and no modern build system - incompatible"
+                    return 1
+                fi
+                
+                echo "✓ Theme validation passed"
                 return 0
             }
             
             echo "Installing verified compatible themes..."
             themes_installed=0
             
-            # Install only verified themes with validation
-            THEME_MAPPINGS=(
-                "CTFd-Dark-Theme:dark"
-                "ctfd-neon-theme:neon"
-                "pixo:pixo"
-                "CTFD-odin-theme:odin"
-                "CTFD-crimson-theme:crimson"
-            )
-            
-            for mapping in "${THEME_MAPPINGS[@]}"; do
-                IFS=':' read -r source_name target_name <<< "$mapping"
-                if [ -d "temp_themes/$source_name" ]; then
-                    if validate_theme_mgr "temp_themes/$source_name" "$target_name"; then
-                        cp -r "temp_themes/$source_name" "data/CTFd/themes/$target_name"
-                        echo "✓ Installed $target_name theme ($source_name)"
-                        themes_installed=$((themes_installed + 1))
-                    else
-                        echo "⚠ Theme $source_name failed validation, skipping"
-                    fi
-                fi
-            done
-            
-            rm -rf temp_themes
-            
-            if [ $themes_installed -gt 0 ]; then
-                echo "✓ Installed $themes_installed compatible themes"
-                echo "Restart CTFd to see new themes: docker compose restart"
-            else
-                echo "⚠ No compatible themes found in repository"
-            fi
-        else
-            echo "Failed to download themes repository"
-        fi
-        ;;
-    2)
-        read -p "Enter GitHub repository URL: " theme_url
-        if [[ -n "$theme_url" ]]; then
-            # Configure git and ensure GitHub host key is known
-            git config --global url."https://github.com/".insteadOf git@github.com: 2>/dev/null || true
-            mkdir -p ~/.ssh
-            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
             theme_name=$(basename "$theme_url" .git)
+            echo "Installing theme: $theme_name"
             if git clone "$theme_url" "temp_$theme_name"; then
-                # Validate theme before installing
                 if validate_theme_mgr "temp_$theme_name" "$theme_name"; then
                     cp -r "temp_$theme_name" "data/CTFd/themes/$theme_name"
                     rm -rf "temp_$theme_name"
                     echo "✓ Successfully installed $theme_name theme"
+                    echo "⚠ IMPORTANT: Test theme thoroughly before using in production"
                     echo "Restart CTFd to see new theme: docker compose restart"
                 else
-                    echo "⚠ Theme $theme_name failed validation - missing required templates"
-                    echo "This theme may not be compatible with CTFd"
+                    echo "✗ Theme $theme_name failed compatibility validation"
+                    echo "This theme is likely incompatible with CTFd 3.6+"
                     rm -rf "temp_$theme_name"
                 fi
             else
                 echo "Failed to clone theme repository"
             fi
+        else
+            echo "No URL provided"
         fi
         ;;
-    3)
+    2)
         echo "Available themes to remove:"
         if [ -d "data/CTFd/themes" ]; then
             ls -1 data/CTFd/themes/
@@ -1399,11 +1438,27 @@ case $choice in
             if [[ -n "$theme_name" ]] && [[ -d "data/CTFd/themes/$theme_name" ]]; then
                 rm -rf "data/CTFd/themes/$theme_name"
                 echo "✓ Removed $theme_name theme"
+                echo "Restart CTFd: docker compose restart"
             else
                 echo "Theme not found"
             fi
         else
             echo "No themes directory found"
+        fi
+        ;;
+    3)
+        echo "Testing current theme compatibility..."
+        if [ -d "data/CTFd/themes" ]; then
+            for theme_dir in data/CTFd/themes/*/; do
+                if [ -d "$theme_dir" ]; then
+                    theme_name=$(basename "$theme_dir")
+                    echo ""
+                    validate_theme_mgr "$theme_dir" "$theme_name"
+                fi
+            done
+        else
+            echo "No custom themes found"
+            echo "Using default core-beta theme (fully compatible)"
         fi
         ;;
     4)
