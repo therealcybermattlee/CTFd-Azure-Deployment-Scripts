@@ -351,3 +351,24 @@ log "  <link rel='stylesheet' href='/files/css/cyber-override.css'>"
 log ""
 log "${YELLOW}The theme CSS is stored at:${NC}"
 log "  data/CTFd/uploads/css/cyber-override.css"
+
+# Try to auto-apply the theme
+log ""
+log "${YELLOW}Attempting to auto-apply theme...${NC}"
+docker compose exec -T ctfd python3 << 'AUTO_APPLY' 2>/dev/null
+try:
+    from CTFd import create_app
+    from CTFd.models import Configs
+    from CTFd.utils import set_config
+    
+    app = create_app()
+    with app.app_context():
+        # Add the cyber theme CSS to the custom CSS config
+        custom_css = '@import url("/files/css/cyber-override.css");'
+        set_config('css', custom_css)
+        print("✓ Cyber theme successfully auto-applied!")
+        print("Refresh your browser to see the new theme")
+except Exception as e:
+    print(f"Could not auto-apply: {e}")
+    print("Please apply manually via Admin Panel")
+AUTO_APPLY
