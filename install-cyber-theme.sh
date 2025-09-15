@@ -50,6 +50,16 @@ mkdir -p "data/CTFd/themes/$THEME_NAME/static/js"
 
 log "${GREEN}[Step 2] Installing theme files...${NC}"
 
+# CRITICAL: Create __init__.py (required for CTFd to recognize the theme)
+cat > "data/CTFd/themes/$THEME_NAME/__init__.py" << 'EOF'
+"""
+Cyber Theme for CTFd
+A hacker-themed cyberpunk design
+"""
+EOF
+
+log "${GREEN}  ✓ Created __init__.py (required for theme detection)${NC}"
+
 # Create base.html template
 cat > "data/CTFd/themes/$THEME_NAME/templates/base.html" << 'EOF'
 <!DOCTYPE html>
