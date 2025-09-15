@@ -1892,6 +1892,122 @@ EOF
     # Setup cron backup
     (crontab -u $ACTUAL_USER -l 2>/dev/null; echo "0 2 * * * $INSTALL_DIR/backup-ctfd.sh") | crontab -u $ACTUAL_USER -
     
+    # Install Cyber Theme
+    log "${YELLOW}Installing Cyber Theme...${NC}"
+    cd "$INSTALL_DIR"
+    
+    # Create theme CSS in uploads directory (where we have write access)
+    mkdir -p "data/CTFd/uploads/css"
+    
+    cat > "data/CTFd/uploads/css/cyber-theme.css" << 'CYBERTHEME'
+/* Cyber Theme for CTFd */
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+:root {
+    --cyber-green: #00ff41;
+    --cyber-dark: #0a0a0a;
+    --cyber-card: #1a1a1a;
+}
+
+body {
+    font-family: 'Share Tech Mono', monospace !important;
+    background: var(--cyber-dark) !important;
+    color: var(--cyber-green) !important;
+}
+
+.navbar {
+    background: linear-gradient(180deg, var(--cyber-card) 0%, var(--cyber-dark) 100%) !important;
+    border-bottom: 2px solid var(--cyber-green) !important;
+    box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
+}
+
+.navbar-brand {
+    color: var(--cyber-green) !important;
+    text-shadow: 0 0 15px var(--cyber-green);
+    animation: glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+    from { text-shadow: 0 0 10px var(--cyber-green); }
+    to { text-shadow: 0 0 20px var(--cyber-green), 0 0 30px var(--cyber-green); }
+}
+
+.nav-link {
+    color: var(--cyber-green) !important;
+}
+
+.nav-link:hover {
+    border: 1px solid var(--cyber-green);
+    background: rgba(0, 255, 65, 0.1);
+}
+
+.btn-primary, .btn-success {
+    background: transparent !important;
+    color: var(--cyber-green) !important;
+    border: 1px solid var(--cyber-green) !important;
+}
+
+.btn-primary:hover, .btn-success:hover {
+    background: var(--cyber-green) !important;
+    color: var(--cyber-dark) !important;
+}
+
+.card, .jumbotron, .modal-content {
+    background: var(--cyber-card) !important;
+    border: 1px solid #008f11 !important;
+}
+
+input, textarea, select, .form-control {
+    background: var(--cyber-dark) !important;
+    color: var(--cyber-green) !important;
+    border: 1px solid #008f11 !important;
+}
+
+input:focus, textarea:focus, select:focus, .form-control:focus {
+    border-color: var(--cyber-green) !important;
+    box-shadow: 0 0 5px var(--cyber-green) !important;
+}
+
+h1, h2, h3, h4, h5, h6, a {
+    color: var(--cyber-green) !important;
+}
+
+.table {
+    color: var(--cyber-green) !important;
+}
+
+.bg-white { background: var(--cyber-card) !important; }
+.bg-light { background: var(--cyber-card) !important; }
+.bg-dark { background: var(--cyber-dark) !important; }
+.text-dark { color: var(--cyber-green) !important; }
+.text-muted { color: #00cc33 !important; }
+.text-white { color: var(--cyber-green) !important; }
+
+/* Terminal scanline effect */
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(0deg, transparent 50%, rgba(0, 255, 65, 0.01) 50%);
+    background-size: 100% 4px;
+    pointer-events: none;
+    z-index: 9999;
+    animation: scan 10s linear infinite;
+}
+
+@keyframes scan {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(20px); }
+}
+CYBERTHEME
+    
+    log "${GREEN}✓ Cyber theme CSS created${NC}"
+    log "${YELLOW}Theme can be applied via Admin Panel > Config > Settings > Custom CSS${NC}"
+    log "${YELLOW}Or accessed directly at: /files/css/cyber-theme.css${NC}"
+    
     # Final summary
     log "\n${BLUE}========================================${NC}"
     log "${GREEN}     Installation Complete!${NC}"
