@@ -2005,28 +2005,9 @@ body::before {
 CYBERTHEME
     
     log "${GREEN}✓ Cyber theme CSS created${NC}"
-    
-    # Try to auto-apply the theme by creating a config entry
-    docker compose exec -T ctfd python3 << 'PYTHON_APPLY' 2>/dev/null || true
-try:
-    from CTFd import create_app
-    from CTFd.models import Configs
-    from CTFd.utils import set_config
-    import sys
-    
-    app = create_app()
-    with app.app_context():
-        # Add the cyber theme CSS to the custom CSS config
-        custom_css = '@import url("/files/css/cyber-theme.css");'
-        set_config('css', custom_css)
-        print("✓ Cyber theme auto-applied to Custom CSS")
-except Exception as e:
-    print(f"Note: Theme CSS created but needs manual activation: {e}")
-    sys.exit(0)
-PYTHON_APPLY
-    
     log "${YELLOW}Theme CSS available at: /files/css/cyber-theme.css${NC}"
-    log "${GREEN}Theme will be active after CTFd setup is complete${NC}"
+    log "${YELLOW}To activate: Admin Panel > Config > Settings > Custom CSS${NC}"
+    log "${YELLOW}Add: @import url('/files/css/cyber-theme.css');${NC}"
     
     # Final summary
     log "\n${BLUE}========================================${NC}"
