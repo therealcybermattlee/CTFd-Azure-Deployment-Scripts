@@ -166,9 +166,19 @@ fi
 
 log "${YELLOW}[5] Setting correct permissions...${NC}"
 
-# Fix permissions
-sudo chown -R 1001:1001 "data/CTFd/themes/"
-chmod -R 755 "data/CTFd/themes/"
+# Try to fix permissions - if it fails, continue anyway
+if sudo chown -R 1001:1001 "data/CTFd/themes/" 2>/dev/null; then
+    log "${GREEN}  ✓ Ownership set to CTFd user${NC}"
+else
+    log "${YELLOW}  ⚠ Could not change ownership (may already be correct)${NC}"
+fi
+
+if sudo chmod -R 755 "data/CTFd/themes/" 2>/dev/null; then
+    log "${GREEN}  ✓ Permissions set${NC}"
+else
+    # Try without sudo as fallback
+    chmod -R 755 "data/CTFd/themes/" 2>/dev/null || log "${YELLOW}  ⚠ Could not change permissions (continuing anyway)${NC}"
+fi
 
 log "${YELLOW}[6] Restarting CTFd container...${NC}"
 
