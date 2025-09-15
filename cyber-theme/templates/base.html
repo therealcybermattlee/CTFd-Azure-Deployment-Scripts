@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ get_config('ctf_name') }}{% endblock %} - Cyber Challenge</title>
+    
+    <!-- CTFd Core Requirements -->
+    {{ Styles.get() }}
+    
+    <!-- Custom Hacker Theme CSS -->
+    <link rel="stylesheet" href="{{ url_for('views.themes', theme='cyber-theme', path='static/css/cyber.css') }}">
+    
+    {% block stylesheets %}{% endblock %}
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <a href="{{ url_for('views.index') }}" class="navbar-brand glitch" data-text="{{ get_config('ctf_name') }}">{{ get_config('ctf_name') }}</a>
+                <div style="display: flex; gap: 1rem;">
+                    {% if get_config('challenge_visibility') != 'admins' %}
+                    <a href="{{ url_for('challenges.listing') }}" class="nav-link">Challenges</a>
+                    {% endif %}
+                    {% if get_config('score_visibility') != 'admins' %}
+                    <a href="{{ url_for('scoreboard.listing') }}" class="nav-link">Scoreboard</a>
+                    {% endif %}
+                    {% if get_config('account_visibility') != 'admins' %}
+                    <a href="{{ url_for('users.listing') }}" class="nav-link">Users</a>
+                    {% endif %}
+                    {% if user %}
+                        {% if user.team_id %}
+                        <a href="{{ url_for('teams.private') }}" class="nav-link">Team</a>
+                        {% endif %}
+                        <a href="{{ url_for('views.settings') }}" class="nav-link">Profile</a>
+                        <a href="{{ url_for('auth.logout') }}" class="nav-link">Logout</a>
+                    {% else %}
+                        {% if get_config('registration_visibility') != 'admins' %}
+                        <a href="{{ url_for('auth.register') }}" class="nav-link">Register</a>
+                        {% endif %}
+                        <a href="{{ url_for('auth.login') }}" class="nav-link">Login</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- CTFd Core Scripts -->
+    {{ Scripts.get() }}
+    
+    <!-- Custom Theme Scripts -->
+    <script src="{{ url_for('views.themes', theme='cyber-theme', path='static/js/cyber.js') }}"></script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>
