@@ -371,6 +371,146 @@ install_popular_themes() {
     fi
 }
 
+# Function to setup CTFd plugins
+setup_ctfd_plugins() {
+    log "${GREEN}[*] Plugin Setup...${NC}"
+    echo ""
+    log "${YELLOW}Would you like to install CTFd plugins?${NC}"
+    log "${BLUE}Available options:${NC}"
+    log "  1) No plugins (default installation)"
+    log "  2) Install popular plugins"
+    log "  3) Install specific plugin from GitHub URL"
+    echo ""
+
+    while true; do
+        read -p "$(echo -e "${YELLOW}Select option [1-3]:${NC} ") " plugin_choice
+        case $plugin_choice in
+            1)
+                log "${GREEN}Skipping plugin installation${NC}"
+                return
+                ;;
+            2)
+                log "${GREEN}Installing popular plugins...${NC}"
+                install_popular_plugins
+                break
+                ;;
+            3)
+                log "${GREEN}Installing custom plugin from GitHub...${NC}"
+                install_custom_plugin_url
+                break
+                ;;
+            *)
+                log "${RED}Invalid option. Please select 1-3.${NC}"
+                ;;
+        esac
+    done
+}
+
+# Function to install popular plugins
+install_popular_plugins() {
+    log "${YELLOW}Installing popular CTFd plugins...${NC}"
+
+    # Create plugins directory
+    mkdir -p data/CTFd/plugins
+
+    log "${YELLOW}Available popular plugins:${NC}"
+    log "  1) CTFd-Crawler - Challenge discovery plugin"
+    log "  2) CTFd-SSO - Single Sign-On support"
+    log "  3) CTFd-Webhook - Discord/Slack notifications"
+    log "  4) CTFd-Containers - Dynamic container challenges"
+    log "  5) All of the above"
+    log "  6) Skip plugin installation"
+    echo ""
+
+    read -p "$(echo -e "${YELLOW}Select option [1-6]:${NC} ")" selected_plugins
+
+    plugins_installed=0
+
+    case $selected_plugins in
+        1|5)
+            log "${YELLOW}Installing CTFd-Crawler...${NC}"
+            if git clone https://github.com/ItsFadinG/CTFd-Crawler.git data/CTFd/plugins/CTFd-Crawler 2>/dev/null; then
+                log "${GREEN}✓ CTFd-Crawler installed${NC}"
+                plugins_installed=$((plugins_installed + 1))
+            else
+                log "${YELLOW}CTFd-Crawler already exists or failed to clone${NC}"
+            fi
+            ;;&
+        2|5)
+            log "${YELLOW}Installing CTFd-SSO...${NC}"
+            if git clone https://github.com/alokmenghrajani/CTFd-SSO.git data/CTFd/plugins/CTFd-SSO 2>/dev/null; then
+                log "${GREEN}✓ CTFd-SSO installed${NC}"
+                plugins_installed=$((plugins_installed + 1))
+            else
+                log "${YELLOW}CTFd-SSO already exists or failed to clone${NC}"
+            fi
+            ;;&
+        3|5)
+            log "${YELLOW}Installing CTFd-Webhook...${NC}"
+            if git clone https://github.com/sciguy14/CTFd-Webhook.git data/CTFd/plugins/CTFd-Webhook 2>/dev/null; then
+                log "${GREEN}✓ CTFd-Webhook installed${NC}"
+                plugins_installed=$((plugins_installed + 1))
+            else
+                log "${YELLOW}CTFd-Webhook already exists or failed to clone${NC}"
+            fi
+            ;;&
+        4|5)
+            log "${YELLOW}Installing CTFd-Containers...${NC}"
+            if git clone https://github.com/andyjsmith/CTFd-Containers.git data/CTFd/plugins/CTFd-Containers 2>/dev/null; then
+                log "${GREEN}✓ CTFd-Containers installed${NC}"
+                log "${YELLOW}Note: CTFd-Containers requires additional Docker configuration${NC}"
+                plugins_installed=$((plugins_installed + 1))
+            else
+                log "${YELLOW}CTFd-Containers already exists or failed to clone${NC}"
+            fi
+            ;;
+        6)
+            log "${GREEN}Skipping plugin installation${NC}"
+            return
+            ;;
+        *)
+            log "${RED}Invalid option${NC}"
+            return
+            ;;
+    esac
+
+    if [ $plugins_installed -gt 0 ]; then
+        log "${GREEN}✓ Installed $plugins_installed plugins${NC}"
+        log "${YELLOW}Plugins will be available after CTFd starts${NC}"
+        # Set flag to add plugin volume to docker-compose
+        INCLUDE_PLUGIN_VOLUME=true
+    fi
+}
+
+# Function to install custom plugin from URL
+install_custom_plugin_url() {
+    echo ""
+    read -p "$(echo -e "${YELLOW}Enter GitHub repository URL (e.g., https://github.com/user/plugin):${NC} ") " plugin_url
+
+    if [[ -z "$plugin_url" ]]; then
+        log "${RED}No URL provided, skipping plugin installation${NC}"
+        return
+    fi
+
+    # Extract plugin name from URL
+    plugin_name=$(basename "$plugin_url" .git)
+
+    # Create plugins directory
+    mkdir -p data/CTFd/plugins
+
+    log "${YELLOW}Installing plugin: $plugin_name...${NC}"
+
+    if git clone "$plugin_url" "data/CTFd/plugins/$plugin_name" 2>/dev/null; then
+        log "${GREEN}✓ Successfully installed $plugin_name plugin${NC}"
+        log "${YELLOW}Plugin will be available after CTFd starts${NC}"
+        # Set flag to add plugin volume to docker-compose
+        INCLUDE_PLUGIN_VOLUME=true
+    else
+        log "${RED}Failed to clone plugin from $plugin_url${NC}"
+        log "${YELLOW}Plugin may already exist or URL may be invalid${NC}"
+    fi
+}
+
 # Function to install custom theme from GitHub URL
 install_custom_theme_url() {
     echo ""
@@ -891,20 +1031,96 @@ EOF
     log "${YELLOW}Skipping theme installation to prevent template errors${NC}"
     log "${GREEN}Using default CTFd theme for stability${NC}"
     log "${BLUE}You can install themes later using: $INSTALL_DIR/manage-themes.sh${NC}"
-    
+
     # Ensure themes directory exists even when empty
     touch data/CTFd/themes/.gitkeep
-    
+
     # Uncomment the following to enable theme installation (not recommended during initial setup)
     # read -p "$(echo -e "${YELLOW}Install community themes? [y/N]:${NC} ") " -n 1 -r
     # echo
     # if [[ $REPLY =~ ^[Yy]$ ]]; then
     #     setup_custom_themes
     # fi
-    
+
+    # Step 4.6: Setup CTFd plugins (optional)
+    echo ""
+    log "${YELLOW}Plugin Installation:${NC}"
+    read -p "$(echo -e "${YELLOW}Would you like to install CTFd plugins? [y/N]:${NC} ") " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        setup_ctfd_plugins
+    else
+        log "${GREEN}Skipping plugin installation${NC}"
+        log "${BLUE}You can install plugins later using: $INSTALL_DIR/install-ctfd-plugins.sh${NC}"
+    fi
+
     # Step 5: Create docker-compose.yml
     log "\n${GREEN}[Step 5/8] Creating Docker configuration...${NC}"
-    cat > docker-compose.yml << 'EOF'
+
+    # Check if we should include plugin volume
+    if [ "${INCLUDE_PLUGIN_VOLUME}" = "true" ] && [ -d "data/CTFd/plugins" ]; then
+        log "${YELLOW}Including plugin volume in Docker configuration${NC}"
+        cat > docker-compose.yml << 'EOF'
+services:
+  ctfd:
+    image: ctfd/ctfd:latest
+    container_name: ctfd
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=mysql+pymysql://ctfd:${DB_PASSWORD}@db:3306/ctfd
+      - REDIS_URL=redis://cache:6379
+      - WORKERS=4
+      - SERVER_NAME=${DOMAIN}
+      - REVERSE_PROXY=True
+      - SESSION_COOKIE_SECURE=True
+      - SESSION_COOKIE_HTTPONLY=True
+      - SESSION_COOKIE_SAMESITE=Lax
+      - LOG_FOLDER=/var/log/CTFd
+      - UPLOAD_FOLDER=/var/uploads
+    volumes:
+      - ./data/CTFd/logs:/var/log/CTFd
+      - ./data/CTFd/uploads:/var/uploads
+      - ./data/CTFd/plugins:/opt/CTFd/CTFd/plugins
+    depends_on:
+      - db
+      - cache
+    networks:
+      - ctfd_net
+
+  db:
+    image: mariadb:10.11
+    container_name: ctfd_db
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_USER=ctfd
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+      - MYSQL_DATABASE=ctfd
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --wait_timeout=28800, --log-warnings=0]
+    networks:
+      - ctfd_net
+
+  cache:
+    image: redis:7-alpine
+    container_name: ctfd_cache
+    restart: always
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - ctfd_net
+
+networks:
+  ctfd_net:
+    driver: bridge
+EOF
+    else
+        # Standard docker-compose without plugin volume
+        cat > docker-compose.yml << 'EOF'
 services:
   ctfd:
     image: ctfd/ctfd:latest
@@ -961,7 +1177,8 @@ networks:
   ctfd_net:
     driver: bridge
 EOF
-    
+    fi
+
     # Step 6: Start Docker containers
     log "\n${GREEN}[Step 6/8] Starting Docker containers...${NC}"
     docker compose pull
@@ -1421,6 +1638,86 @@ echo "Backup saved to: $BACKUP_DIR/ctfd-backup-$TIMESTAMP.tar.gz"
 ls -lh "$BACKUP_DIR/ctfd-backup-$TIMESTAMP.tar.gz"
 EOF
     
+    # Plugin management script
+    cat > "$INSTALL_DIR/manage-plugins.sh" << 'EOF'
+#!/bin/bash
+cd "$(dirname "$0")"
+echo "=== CTFd Plugin Manager ==="
+
+# Function to list installed plugins
+list_plugins() {
+    echo "Installed plugins:"
+    if [ -d "data/CTFd/plugins" ] && [ "$(ls -A data/CTFd/plugins 2>/dev/null)" ]; then
+        ls -la data/CTFd/plugins/ | grep "^d" | awk '{print "  - " $NF}' | tail -n +3
+    else
+        echo "  No plugins installed"
+    fi
+}
+
+# Function to install plugin
+install_plugin() {
+    echo "Enter GitHub repository URL (e.g., https://github.com/user/plugin):"
+    read plugin_url
+
+    if [ -z "$plugin_url" ]; then
+        echo "No URL provided"
+        return
+    fi
+
+    plugin_name=$(basename "$plugin_url" .git)
+    mkdir -p data/CTFd/plugins
+
+    if git clone "$plugin_url" "data/CTFd/plugins/$plugin_name"; then
+        echo "✓ Plugin $plugin_name installed"
+        echo "Adding plugin volume to docker-compose.yml..."
+
+        # Add plugin volume if not already present
+        if ! grep -q "./data/CTFd/plugins:/opt/CTFd/CTFd/plugins" docker-compose.yml; then
+            sed -i '/- \.\/data\/CTFd\/uploads:\/var\/uploads/a\      - ./data/CTFd/plugins:/opt/CTFd/CTFd/plugins' docker-compose.yml
+        fi
+
+        echo "Restart CTFd to load the plugin: docker compose restart ctfd"
+    else
+        echo "Failed to clone plugin"
+    fi
+}
+
+# Function to update all plugins
+update_plugins() {
+    if [ -d "data/CTFd/plugins" ]; then
+        for plugin_dir in data/CTFd/plugins/*/; do
+            if [ -d "$plugin_dir/.git" ]; then
+                plugin_name=$(basename "$plugin_dir")
+                echo "Updating $plugin_name..."
+                cd "$plugin_dir" && git pull && cd - >/dev/null
+            fi
+        done
+        echo "✓ All plugins updated"
+        echo "Restart CTFd to reload plugins: docker compose restart ctfd"
+    else
+        echo "No plugins directory found"
+    fi
+}
+
+# Main menu
+echo ""
+echo "1) List installed plugins"
+echo "2) Install new plugin"
+echo "3) Update all plugins"
+echo "4) Exit"
+echo ""
+read -p "Select option [1-4]: " choice
+
+case $choice in
+    1) list_plugins ;;
+    2) install_plugin ;;
+    3) update_plugins ;;
+    4) echo "Exiting..." ;;
+    *) echo "Invalid option" ;;
+esac
+EOF
+    chmod +x "$INSTALL_DIR/manage-plugins.sh"
+
     # Theme management script
     cat > "$INSTALL_DIR/manage-themes.sh" << 'EOF'
 #!/bin/bash
@@ -2032,6 +2329,7 @@ CYBERTHEME
     log "  Health: $INSTALL_DIR/health-ctfd.sh"
     log "  Fix: $INSTALL_DIR/fix-ctfd.sh"
     log "  Themes: $INSTALL_DIR/manage-themes.sh"
+    log "  Plugins: $INSTALL_DIR/manage-plugins.sh"
     log "  Network: $INSTALL_DIR/diagnose-network.sh"
     log ""
     log "${GREEN}Next Steps:${NC}"
