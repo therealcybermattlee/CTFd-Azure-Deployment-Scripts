@@ -40,13 +40,9 @@ EOF
 
 ## Common Issues and Solutions
 
-### 500 Internal Server Error After Theme Mount
-**Cause**: Volume mounting themes directory overrides CTFd's built-in templates
-**Solution**: Remove theme volume mount from docker-compose.yml:
-```bash
-sed -i '/\/opt\/CTFd\/CTFd\/themes/d' docker-compose.yml
-docker compose down && docker compose up -d
-```
+### 500 Internal Server Error (Historical Issue)
+**Cause**: Theme directory mounting was overriding CTFd's built-in templates
+**Solution**: Theme mounting has been removed from installation script - use uploads directory method instead
 
 ### Database Initialization Errors
 **Cause**: CTFd starts before database is ready, or database permission issues
@@ -73,8 +69,7 @@ docker compose down && docker compose up -d
 
 ### Theme Management
 - `install-cyber-theme.sh`: Installs cyber theme CSS via uploads directory
-- `emergency-fix-500.sh`: Fixes 500 errors caused by theme mounts
-- **New approach**: Individual theme mounting prevents 500 errors
+- **Approach**: Use uploads directory method (theme mounting removed due to instability)
 
 ### Utilities
 - `install-theme-via-uploads.sh`: Alternative theme installation method
