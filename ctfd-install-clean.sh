@@ -942,6 +942,10 @@ main() {
     chmod -R 755 data/CTFd/logs
 
     # MySQL and Redis need their own permissions
+    # MariaDB container runs as user 999, set proper ownership
+    log "${YELLOW}Setting MySQL database permissions...${NC}"
+    chown -R 999:999 data/mysql
+    chmod -R 755 data/mysql
     chmod -R 755 data/
     
     # Step 4: Generate credentials

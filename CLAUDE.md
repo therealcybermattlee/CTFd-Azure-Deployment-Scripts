@@ -49,8 +49,10 @@ docker compose down && docker compose up -d
 ```
 
 ### Database Initialization Errors
-**Cause**: CTFd starts before database is ready
-**Solution**: Sequential startup with health checks (implemented in ctfd-install-clean.sh)
+**Cause**: CTFd starts before database is ready, or database permission issues
+**Solution**:
+1. Sequential startup with health checks (implemented in ctfd-install-clean.sh)
+2. Proper database directory permissions: `chown -R 999:999 data/mysql`
 
 ### Permission Errors in Container
 **Cause**: Container runs as user 1001, file system is read-only
@@ -119,7 +121,7 @@ docker compose exec ctfd ls -la /var/uploads/css/
 2. **Mount plugins individually** as `/opt/CTFd/CTFd/plugins/[plugin_name]` to avoid overwriting built-in plugins
 3. **Use uploads directory for themes** - mounting themes causes container instability
 3. **Always use uploads directory** for custom content
-4. **Set proper permissions** - CTFd runs as user 1001, directories need `chown 1001:1001`
+4. **Set proper permissions** - CTFd runs as user 1001, MariaDB as user 999, directories need proper ownership
 5. **Container file system is read-only** - work within these constraints
 6. **Sequential startup** prevents database initialization issues
 7. **Test locally first** with `curl http://localhost:8000`
