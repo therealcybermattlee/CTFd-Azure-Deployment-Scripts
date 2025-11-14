@@ -1149,6 +1149,11 @@ EOF
     docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON ctfd.* TO 'ctfd'@'%';" >/dev/null 2>&1
     docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" >/dev/null 2>&1
 
+    # Fix database directory permissions AFTER database initialization
+    log "${YELLOW}Fixing database directory permissions after initialization...${NC}"
+    chown -R 999:999 data/mysql
+    chmod -R 755 data/mysql
+
     # Now start CTFd with database ready
     log "${YELLOW}Starting CTFd application...${NC}"
     docker compose up -d ctfd
