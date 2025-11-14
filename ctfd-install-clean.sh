@@ -956,6 +956,10 @@ main() {
     mkdir -p "$INSTALL_DIR"
     cd "$INSTALL_DIR"
     
+    # Clean any existing database data to prevent permission issues
+    log "${YELLOW}Cleaning any existing database data...${NC}"
+    rm -rf data/mysql/*
+
     # Create data directories
     mkdir -p data/CTFd/logs
     mkdir -p data/CTFd/uploads
@@ -1138,10 +1142,32 @@ EOF
         sleep 2
     done
     echo ""
-    
+
+    # Ensure database exists and is accessible
+    log "${YELLOW}Ensuring CTFd database exists...${NC}"
+    docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS ctfd;" >/dev/null 2>&1
+    docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON ctfd.* TO 'ctfd'@'%';" >/dev/null 2>&1
+    docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" >/dev/null 2>&1
+
+    # Fix any permission issues on the database directory
+    log "${YELLOW}Verifying database permissions...${NC}"
+    docker compose exec -T db chown -R mysql:mysql /var/lib/mysql >/dev/null 2>&1 || true
+
     # Now start CTFd with database ready
     log "${YELLOW}Starting CTFd application...${NC}"
     docker compose up -d ctfd
+
+    # Give CTFd time to run migrations
+    log "${YELLOW}Waiting for CTFd to initialize database schema...${NC}"
+    sleep 20
+
+    # Verify database tables were created
+    TABLE_COUNT=$(docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -D ctfd -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='ctfd';" 2>/dev/null | grep -o '[0-9]*' | tail -1)
+    if [ "$TABLE_COUNT" -gt "20" ] 2>/dev/null; then
+        log "${GREEN}✓ Database schema created successfully (${TABLE_COUNT} tables)${NC}"
+    else
+        log "${YELLOW}⚠ Database may still be initializing${NC}"
+    fi
     
     # Wait for CTFd to be ready
     log "${YELLOW}Waiting for CTFd to initialize...${NC}"
