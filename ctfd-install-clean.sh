@@ -1073,24 +1073,11 @@ EOF
         log "${GREEN}✓ Individual plugin volumes added to avoid overwriting built-in plugins${NC}"
     fi
 
-    # Add individual theme volumes if themes were installed
-    if [ -d "data/CTFd/themes" ]; then
-        log "${YELLOW}Adding individual theme volumes to Docker configuration...${NC}"
-
-        for theme_dir in data/CTFd/themes/*/; do
-            if [ -d "$theme_dir" ]; then
-                theme_name=$(basename "$theme_dir")
-                log "${YELLOW}Adding volume mount for theme: $theme_name${NC}"
-
-                # Add individual theme volume mount after the uploads volume
-                # Try both BSD and GNU sed syntax for compatibility
-                sed -i '' "/- \.\/data\/CTFd\/uploads:\/var\/uploads/a\\
-      - ./data/CTFd/themes/$theme_name:/opt/CTFd/CTFd/themes/$theme_name" docker-compose.yml 2>/dev/null || \
-                sed -i "/- \.\/data\/CTFd\/uploads:\/var\/uploads/a\\      - ./data/CTFd/themes/$theme_name:/opt/CTFd/CTFd/themes/$theme_name" docker-compose.yml
-            fi
-        done
-
-        log "${GREEN}✓ Individual theme volumes added to avoid overwriting built-in themes${NC}"
+    # Note: Theme mounting removed - use uploads directory method instead
+    # Individual theme mounting was causing docker-compose.yml corruption
+    if [ -d "data/CTFd/themes" ] && [ "$(find data/CTFd/themes -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)" -gt 0 ]; then
+        log "${YELLOW}Themes installed but not mounted to avoid container issues${NC}"
+        log "${BLUE}Use install-cyber-theme.sh for uploads-based theming instead${NC}"
     fi
 
     # Step 6: Start Docker containers

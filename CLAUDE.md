@@ -115,9 +115,9 @@ docker compose exec ctfd ls -la /var/uploads/css/
 - Container startup order matters on Azure VMs with limited resources
 
 ## Key Learnings
-1. **Never mount entire directories to `/opt/CTFd/CTFd/themes/`** - it breaks CTFd
+1. **Never mount volumes to `/opt/CTFd/CTFd/themes/`** - it breaks CTFd (individual or entire directory)
 2. **Mount plugins individually** as `/opt/CTFd/CTFd/plugins/[plugin_name]` to avoid overwriting built-in plugins
-3. **Mount themes individually** as `/opt/CTFd/CTFd/themes/[theme_name]` to avoid overwriting built-in themes
+3. **Use uploads directory for themes** - mounting themes causes container instability
 3. **Always use uploads directory** for custom content
 4. **Set proper permissions** - CTFd runs as user 1001, directories need `chown 1001:1001`
 5. **Container file system is read-only** - work within these constraints
