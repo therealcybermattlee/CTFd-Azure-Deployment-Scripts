@@ -1149,10 +1149,34 @@ EOF
     docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON ctfd.* TO 'ctfd'@'%';" >/dev/null 2>&1
     docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;" >/dev/null 2>&1
 
-    # Fix database directory permissions AFTER database initialization
-    log "${YELLOW}Fixing database directory permissions after initialization...${NC}"
+    # Stop containers and fix all permissions comprehensively
+    log "${YELLOW}Stopping containers for comprehensive permission fix...${NC}"
+    docker compose down
+    sleep 3
+
+    # Fix ALL permissions while containers are stopped
+    log "${YELLOW}Applying comprehensive permission fixes...${NC}"
     chown -R 999:999 data/mysql
+    chown -R 1001:1001 data/CTFd
     chmod -R 755 data/mysql
+    chmod -R 755 data/CTFd
+    chmod -R 755 data/
+
+    # Restart all containers with correct permissions
+    log "${YELLOW}Restarting containers with correct permissions...${NC}"
+    docker compose up -d
+
+    # Wait for database to be ready again
+    log "${YELLOW}Waiting for database to be ready...${NC}"
+    for i in {1..30}; do
+        if docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; then
+            log "${GREEN}✓ Database is ready${NC}"
+            break
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo ""
 
     # Now start CTFd with database ready
     log "${YELLOW}Starting CTFd application...${NC}"
@@ -2158,12 +2182,8 @@ EOF
     log "${YELLOW}Installing Cyber Theme...${NC}"
     cd "$INSTALL_DIR"
     
-    # Create theme CSS in uploads directory (where we have write access)
+    # Create theme CSS in uploads directory (permissions already set)
     mkdir -p "data/CTFd/uploads/css"
-
-    # Ensure proper permissions for uploads directory
-    chown -R 1001:1001 "data/CTFd/uploads"
-    chmod -R 755 "data/CTFd/uploads"
 
     cat > "data/CTFd/uploads/css/cyber-theme.css" << 'CYBERTHEME'
 /* Cyber Theme for CTFd */
@@ -2270,9 +2290,7 @@ body::before {
 }
 CYBERTHEME
 
-    # Set proper permissions for the CSS file
-    chown 1001:1001 "data/CTFd/uploads/css/cyber-theme.css"
-    chmod 644 "data/CTFd/uploads/css/cyber-theme.css"
+    # Permissions already set globally - no need to change individual files
 
     log "${GREEN}✓ Cyber theme CSS created with proper permissions${NC}"
     log "${YELLOW}Theme CSS available at: /files/css/cyber-theme.css${NC}"
