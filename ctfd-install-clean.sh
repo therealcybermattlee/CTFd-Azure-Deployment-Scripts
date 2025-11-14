@@ -1153,6 +1153,12 @@ EOF
     log "${YELLOW}Verifying database permissions...${NC}"
     docker compose exec -T db chown -R mysql:mysql /var/lib/mysql >/dev/null 2>&1 || true
 
+    # Fix database permissions before starting CTFd
+    log "${YELLOW}Fixing database permissions...${NC}"
+    chown -R 999:999 data/mysql
+    docker compose restart db
+    sleep 10
+
     # Now start CTFd with database ready
     log "${YELLOW}Starting CTFd application...${NC}"
     docker compose up -d ctfd
