@@ -1125,7 +1125,6 @@ networks:
   ctfd_net:
     driver: bridge
 EOF
-    fi
 
     # Add individual plugin volumes if plugins were installed
     if [ "${INCLUDE_PLUGIN_VOLUME}" = "true" ] && [ -d "data/CTFd/plugins" ]; then
