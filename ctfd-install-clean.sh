@@ -1153,11 +1153,30 @@ EOF
     log "${YELLOW}Verifying database permissions...${NC}"
     docker compose exec -T db chown -R mysql:mysql /var/lib/mysql >/dev/null 2>&1 || true
 
-    # Fix database permissions before starting CTFd
+    # Stop all containers for proper restart sequence
+    log "${YELLOW}Stopping containers for database fix...${NC}"
+    docker compose down
+    sleep 5
+
+    # Fix database permissions
     log "${YELLOW}Fixing database permissions...${NC}"
     chown -R 999:999 data/mysql
-    docker compose restart db
-    sleep 10
+
+    # Start database first and ensure it's fully ready
+    log "${YELLOW}Starting database container...${NC}"
+    docker compose up -d db cache
+    sleep 15
+
+    # Test database connectivity before proceeding
+    for i in {1..10}; do
+        if docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "SELECT 1;" >/dev/null 2>&1; then
+            log "${GREEN}✓ Database is accessible${NC}"
+            break
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo ""
 
     # Now start CTFd with database ready
     log "${YELLOW}Starting CTFd application...${NC}"
@@ -1165,15 +1184,22 @@ EOF
 
     # Give CTFd time to run migrations
     log "${YELLOW}Waiting for CTFd to initialize database schema...${NC}"
-    sleep 20
+    sleep 30
 
-    # Verify database tables were created
-    TABLE_COUNT=$(docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -D ctfd -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='ctfd';" 2>/dev/null | grep -o '[0-9]*' | tail -1)
-    if [ "$TABLE_COUNT" -gt "20" ] 2>/dev/null; then
-        log "${GREEN}✓ Database schema created successfully (${TABLE_COUNT} tables)${NC}"
-    else
-        log "${YELLOW}⚠ Database may still be initializing${NC}"
-    fi
+    # Verify database tables were created - retry if needed
+    for attempt in {1..3}; do
+        TABLE_COUNT=$(docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -D ctfd -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='ctfd';" 2>/dev/null | grep -o '[0-9]*' | tail -1)
+        if [ "$TABLE_COUNT" -gt "20" ] 2>/dev/null; then
+            log "${GREEN}✓ Database schema created successfully (${TABLE_COUNT} tables)${NC}"
+            break
+        else
+            log "${YELLOW}⚠ Attempt $attempt: Only $TABLE_COUNT tables found, retrying...${NC}"
+            if [ "$attempt" -eq 3 ]; then
+                log "${RED}✗ Database initialization failed after 3 attempts${NC}"
+            fi
+            sleep 10
+        fi
+    done
     
     # Wait for CTFd to be ready
     log "${YELLOW}Waiting for CTFd to initialize...${NC}"
