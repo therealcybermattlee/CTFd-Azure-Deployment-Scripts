@@ -10,6 +10,7 @@ This repository contains scripts for deploying CTFd (Capture The Flag platform) 
 - **Nginx**: Reverse proxy with SSL termination (ports 80/443)
 - **Docker Compose**: Orchestration of all services
 - **Plugins**: Mounted individually to avoid overwriting built-in plugins
+- **Themes**: Mounted individually to avoid overwriting built-in themes
 
 ## Critical Docker Container Insights
 
@@ -71,6 +72,7 @@ docker compose down && docker compose up -d
 ### Theme Management
 - `install-cyber-theme.sh`: Installs cyber theme CSS via uploads directory
 - `emergency-fix-500.sh`: Fixes 500 errors caused by theme mounts
+- **New approach**: Individual theme mounting prevents 500 errors
 
 ### Utilities
 - `install-theme-via-uploads.sh`: Alternative theme installation method
@@ -113,8 +115,9 @@ docker compose exec ctfd ls -la /var/uploads/css/
 - Container startup order matters on Azure VMs with limited resources
 
 ## Key Learnings
-1. **Never mount volumes to `/opt/CTFd/CTFd/themes/`** - it breaks CTFd
+1. **Never mount entire directories to `/opt/CTFd/CTFd/themes/`** - it breaks CTFd
 2. **Mount plugins individually** as `/opt/CTFd/CTFd/plugins/[plugin_name]` to avoid overwriting built-in plugins
+3. **Mount themes individually** as `/opt/CTFd/CTFd/themes/[theme_name]` to avoid overwriting built-in themes
 3. **Always use uploads directory** for custom content
 4. **Set proper permissions** - CTFd runs as user 1001, directories need `chown 1001:1001`
 5. **Container file system is read-only** - work within these constraints
