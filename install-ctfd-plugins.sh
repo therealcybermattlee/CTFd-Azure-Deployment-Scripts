@@ -56,6 +56,10 @@ install_popular_plugins() {
     # Create plugins directory in data folder
     mkdir -p data/CTFd/plugins
 
+    # Ensure proper permissions
+    sudo chown -R 1001:1001 data/CTFd/plugins
+    sudo chmod -R 755 data/CTFd/plugins
+
     log "${YELLOW}Available popular plugins:${NC}"
     log "  1) CTFd-Crawler - Challenge discovery plugin"
     log "  2) CTFd-SSO - Single Sign-On support"
@@ -126,39 +130,88 @@ install_custom_plugin() {
     # Create plugins directory
     mkdir -p data/CTFd/plugins
 
+    # Ensure proper permissions
+    sudo chown -R 1001:1001 data/CTFd/plugins
+    sudo chmod -R 755 data/CTFd/plugins
+
     # Clone the plugin
     log "${YELLOW}Cloning plugin: $plugin_name...${NC}"
     if git clone "$plugin_url" "data/CTFd/plugins/$plugin_name" 2>/dev/null; then
-        log "${GREEN}✓ Plugin $plugin_name installed successfully${NC}"
+        # Set proper permissions for the new plugin
+        sudo chown -R 1001:1001 "data/CTFd/plugins/$plugin_name"
+        sudo chmod -R 755 "data/CTFd/plugins/$plugin_name"
+        log "${GREEN}✓ Plugin $plugin_name installed successfully with proper permissions${NC}"
     else
         log "${RED}Failed to clone plugin from $plugin_url${NC}"
         log "${YELLOW}Plugin may already exist or URL may be invalid${NC}"
     fi
 }
 
-# Function to update docker-compose.yml with plugin volume
+# Function to update docker-compose.yml with individual plugin volumes
 update_docker_compose() {
     log "${YELLOW}Updating Docker configuration for plugins...${NC}"
-
-    # Check if plugins volume already exists
-    if grep -q "./data/CTFd/plugins:/opt/CTFd/CTFd/plugins" docker-compose.yml; then
-        log "${GREEN}✓ Plugin volume already configured${NC}"
-        return
-    fi
 
     # Backup current docker-compose.yml
     cp docker-compose.yml docker-compose.yml.backup
 
-    # Add plugins volume to CTFd service
-    # This adds the volume mount after the uploads volume
-    sed -i '/- \.\/data\/CTFd\/uploads:\/var\/uploads/a\      - ./data/CTFd/plugins:/opt/CTFd/CTFd/plugins' docker-compose.yml
+    # Remove any existing full plugin directory mount (if it exists from old version)
+    sed -i '' '/- \.\/data\/CTFd\/plugins:\/opt\/CTFd\/CTFd\/plugins/d' docker-compose.yml 2>/dev/null || \
+    sed -i '/- \.\/data\/CTFd\/plugins:\/opt\/CTFd\/CTFd\/plugins/d' docker-compose.yml 2>/dev/null
 
-    log "${GREEN}✓ Docker configuration updated${NC}"
+    # Get list of plugin directories
+    if [ -d "data/CTFd/plugins" ]; then
+        for plugin_dir in data/CTFd/plugins/*/; do
+            if [ -d "$plugin_dir" ]; then
+                plugin_name=$(basename "$plugin_dir")
+
+                # Check if this plugin volume already exists
+                if ! grep -q "./data/CTFd/plugins/$plugin_name:/opt/CTFd/CTFd/plugins/$plugin_name" docker-compose.yml; then
+                    log "${YELLOW}Adding volume mount for plugin: $plugin_name${NC}"
+                    # Add individual plugin volume mount after the uploads volume
+                    # Try both BSD and GNU sed syntax
+                    sed -i '' "/- \.\/data\/CTFd\/uploads:\/var\/uploads/a\\
+      - ./data/CTFd/plugins/$plugin_name:/opt/CTFd/CTFd/plugins/$plugin_name" docker-compose.yml 2>/dev/null || \
+                    sed -i "/- \.\/data\/CTFd\/uploads:\/var\/uploads/a\\      - ./data/CTFd/plugins/$plugin_name:/opt/CTFd/CTFd/plugins/$plugin_name" docker-compose.yml
+                fi
+            fi
+        done
+        log "${GREEN}✓ Docker configuration updated with individual plugin mounts${NC}"
+        log "${YELLOW}Note: Each plugin is mounted individually to avoid overwriting built-in plugins${NC}"
+    else
+        log "${YELLOW}No plugins directory found${NC}"
+    fi
+}
+
+# Function to fix permissions
+fix_permissions() {
+    log "${YELLOW}Fixing permissions for CTFd directories...${NC}"
+
+    # CTFd container runs as user 1001
+    if [ -d "data/CTFd/uploads" ]; then
+        sudo chown -R 1001:1001 data/CTFd/uploads
+        sudo chmod -R 755 data/CTFd/uploads
+        log "${GREEN}✓ Fixed uploads directory permissions${NC}"
+    fi
+
+    if [ -d "data/CTFd/logs" ]; then
+        sudo chown -R 1001:1001 data/CTFd/logs
+        sudo chmod -R 755 data/CTFd/logs
+        log "${GREEN}✓ Fixed logs directory permissions${NC}"
+    fi
+
+    if [ -d "data/CTFd/plugins" ]; then
+        sudo chown -R 1001:1001 data/CTFd/plugins
+        sudo chmod -R 755 data/CTFd/plugins
+        log "${GREEN}✓ Fixed plugins directory permissions${NC}"
+    fi
 }
 
 # Function to restart CTFd with plugins
 restart_ctfd() {
     log "${YELLOW}Restarting CTFd to load plugins...${NC}"
+
+    # Fix permissions before restart
+    fix_permissions
 
     # Stop CTFd container
     docker compose stop ctfd

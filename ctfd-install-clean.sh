@@ -1005,6 +1005,16 @@ main() {
     mkdir -p data/CTFd/themes
     mkdir -p data/mysql
     mkdir -p data/redis
+
+    # Set proper permissions for CTFd directories
+    # CTFd container runs as user 1001
+    log "${YELLOW}Setting proper permissions for CTFd directories...${NC}"
+    chown -R 1001:1001 data/CTFd/uploads
+    chown -R 1001:1001 data/CTFd/logs
+    chmod -R 755 data/CTFd/uploads
+    chmod -R 755 data/CTFd/logs
+
+    # MySQL and Redis need their own permissions
     chmod -R 755 data/
     
     # Step 4: Generate credentials
@@ -1057,126 +1067,84 @@ EOF
     # Step 5: Create docker-compose.yml
     log "\n${GREEN}[Step 5/8] Creating Docker configuration...${NC}"
 
-    # Check if we should include plugin volume
+    # Always create the base docker-compose.yml
+    cat > docker-compose.yml << 'EOF'
+services:
+  ctfd:
+    image: ctfd/ctfd:latest
+    container_name: ctfd
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=mysql+pymysql://ctfd:${DB_PASSWORD}@db:3306/ctfd
+      - REDIS_URL=redis://cache:6379
+      - WORKERS=4
+      - SERVER_NAME=${DOMAIN}
+      - REVERSE_PROXY=True
+      - SESSION_COOKIE_SECURE=True
+      - SESSION_COOKIE_HTTPONLY=True
+      - SESSION_COOKIE_SAMESITE=Lax
+      - LOG_FOLDER=/var/log/CTFd
+      - UPLOAD_FOLDER=/var/uploads
+    volumes:
+      - ./data/CTFd/logs:/var/log/CTFd
+      - ./data/CTFd/uploads:/var/uploads
+    depends_on:
+      - db
+      - cache
+    networks:
+      - ctfd_net
+
+  db:
+    image: mariadb:10.11
+    container_name: ctfd_db
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_USER=ctfd
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+      - MYSQL_DATABASE=ctfd
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --wait_timeout=28800, --log-warnings=0]
+    networks:
+      - ctfd_net
+
+  cache:
+    image: redis:7-alpine
+    container_name: ctfd_cache
+    restart: always
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - ctfd_net
+
+networks:
+  ctfd_net:
+    driver: bridge
+EOF
+    fi
+
+    # Add individual plugin volumes if plugins were installed
     if [ "${INCLUDE_PLUGIN_VOLUME}" = "true" ] && [ -d "data/CTFd/plugins" ]; then
-        log "${YELLOW}Including plugin volume in Docker configuration${NC}"
-        cat > docker-compose.yml << 'EOF'
-services:
-  ctfd:
-    image: ctfd/ctfd:latest
-    container_name: ctfd
-    restart: always
-    ports:
-      - "8000:8000"
-    environment:
-      - SECRET_KEY=${SECRET_KEY}
-      - DATABASE_URL=mysql+pymysql://ctfd:${DB_PASSWORD}@db:3306/ctfd
-      - REDIS_URL=redis://cache:6379
-      - WORKERS=4
-      - SERVER_NAME=${DOMAIN}
-      - REVERSE_PROXY=True
-      - SESSION_COOKIE_SECURE=True
-      - SESSION_COOKIE_HTTPONLY=True
-      - SESSION_COOKIE_SAMESITE=Lax
-      - LOG_FOLDER=/var/log/CTFd
-      - UPLOAD_FOLDER=/var/uploads
-    volumes:
-      - ./data/CTFd/logs:/var/log/CTFd
-      - ./data/CTFd/uploads:/var/uploads
-      - ./data/CTFd/plugins:/opt/CTFd/CTFd/plugins
-    depends_on:
-      - db
-      - cache
-    networks:
-      - ctfd_net
+        log "${YELLOW}Adding individual plugin volumes to Docker configuration...${NC}"
 
-  db:
-    image: mariadb:10.11
-    container_name: ctfd_db
-    restart: always
-    environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - MYSQL_USER=ctfd
-      - MYSQL_PASSWORD=${DB_PASSWORD}
-      - MYSQL_DATABASE=ctfd
-    volumes:
-      - ./data/mysql:/var/lib/mysql
-    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --wait_timeout=28800, --log-warnings=0]
-    networks:
-      - ctfd_net
+        for plugin_dir in data/CTFd/plugins/*/; do
+            if [ -d "$plugin_dir" ]; then
+                plugin_name=$(basename "$plugin_dir")
+                log "${YELLOW}Adding volume mount for plugin: $plugin_name${NC}"
 
-  cache:
-    image: redis:7-alpine
-    container_name: ctfd_cache
-    restart: always
-    volumes:
-      - ./data/redis:/data
-    networks:
-      - ctfd_net
+                # Add individual plugin volume mount after the uploads volume
+                # Try both BSD and GNU sed syntax for compatibility
+                sed -i '' "/- \.\/data\/CTFd\/uploads:\/var\/uploads/a\\
+      - ./data/CTFd/plugins/$plugin_name:/opt/CTFd/CTFd/plugins/$plugin_name" docker-compose.yml 2>/dev/null || \
+                sed -i "/- \.\/data\/CTFd\/uploads:\/var\/uploads/a\\      - ./data/CTFd/plugins/$plugin_name:/opt/CTFd/CTFd/plugins/$plugin_name" docker-compose.yml
+            fi
+        done
 
-networks:
-  ctfd_net:
-    driver: bridge
-EOF
-    else
-        # Standard docker-compose without plugin volume
-        cat > docker-compose.yml << 'EOF'
-services:
-  ctfd:
-    image: ctfd/ctfd:latest
-    container_name: ctfd
-    restart: always
-    ports:
-      - "8000:8000"
-    environment:
-      - SECRET_KEY=${SECRET_KEY}
-      - DATABASE_URL=mysql+pymysql://ctfd:${DB_PASSWORD}@db:3306/ctfd
-      - REDIS_URL=redis://cache:6379
-      - WORKERS=4
-      - SERVER_NAME=${DOMAIN}
-      - REVERSE_PROXY=True
-      - SESSION_COOKIE_SECURE=True
-      - SESSION_COOKIE_HTTPONLY=True
-      - SESSION_COOKIE_SAMESITE=Lax
-      - LOG_FOLDER=/var/log/CTFd
-      - UPLOAD_FOLDER=/var/uploads
-    volumes:
-      - ./data/CTFd/logs:/var/log/CTFd
-      - ./data/CTFd/uploads:/var/uploads
-    depends_on:
-      - db
-      - cache
-    networks:
-      - ctfd_net
-
-  db:
-    image: mariadb:10.11
-    container_name: ctfd_db
-    restart: always
-    environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - MYSQL_USER=ctfd
-      - MYSQL_PASSWORD=${DB_PASSWORD}
-      - MYSQL_DATABASE=ctfd
-    volumes:
-      - ./data/mysql:/var/lib/mysql
-    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --wait_timeout=28800, --log-warnings=0]
-    networks:
-      - ctfd_net
-
-  cache:
-    image: redis:7-alpine
-    container_name: ctfd_cache
-    restart: always
-    volumes:
-      - ./data/redis:/data
-    networks:
-      - ctfd_net
-
-networks:
-  ctfd_net:
-    driver: bridge
-EOF
+        log "${GREEN}✓ Individual plugin volumes added to avoid overwriting built-in plugins${NC}"
     fi
 
     # Step 6: Start Docker containers
@@ -1669,11 +1637,14 @@ install_plugin() {
 
     if git clone "$plugin_url" "data/CTFd/plugins/$plugin_name"; then
         echo "✓ Plugin $plugin_name installed"
-        echo "Adding plugin volume to docker-compose.yml..."
+        echo "Adding individual plugin volume to docker-compose.yml..."
 
-        # Add plugin volume if not already present
-        if ! grep -q "./data/CTFd/plugins:/opt/CTFd/CTFd/plugins" docker-compose.yml; then
-            sed -i '/- \.\/data\/CTFd\/uploads:\/var\/uploads/a\      - ./data/CTFd/plugins:/opt/CTFd/CTFd/plugins' docker-compose.yml
+        # Add individual plugin volume if not already present
+        if ! grep -q "./data/CTFd/plugins/$plugin_name:/opt/CTFd/CTFd/plugins/$plugin_name" docker-compose.yml; then
+            # Try both BSD and GNU sed syntax
+            sed -i '' "/- \.\/data\/CTFd\/uploads:\/var\/uploads/a\\
+      - ./data/CTFd/plugins/$plugin_name:/opt/CTFd/CTFd/plugins/$plugin_name" docker-compose.yml 2>/dev/null || \
+            sed -i "/- \.\/data\/CTFd\/uploads:\/var\/uploads/a\\      - ./data/CTFd/plugins/$plugin_name:/opt/CTFd/CTFd/plugins/$plugin_name" docker-compose.yml
         fi
 
         echo "Restart CTFd to load the plugin: docker compose restart ctfd"
@@ -2195,7 +2166,11 @@ EOF
     
     # Create theme CSS in uploads directory (where we have write access)
     mkdir -p "data/CTFd/uploads/css"
-    
+
+    # Ensure proper permissions for uploads directory
+    chown -R 1001:1001 "data/CTFd/uploads"
+    chmod -R 755 "data/CTFd/uploads"
+
     cat > "data/CTFd/uploads/css/cyber-theme.css" << 'CYBERTHEME'
 /* Cyber Theme for CTFd */
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
@@ -2300,8 +2275,12 @@ body::before {
     100% { transform: translateY(20px); }
 }
 CYBERTHEME
-    
-    log "${GREEN}✓ Cyber theme CSS created${NC}"
+
+    # Set proper permissions for the CSS file
+    chown 1001:1001 "data/CTFd/uploads/css/cyber-theme.css"
+    chmod 644 "data/CTFd/uploads/css/cyber-theme.css"
+
+    log "${GREEN}✓ Cyber theme CSS created with proper permissions${NC}"
     log "${YELLOW}Theme CSS available at: /files/css/cyber-theme.css${NC}"
     log "${YELLOW}To activate: Admin Panel > Config > Settings > Custom CSS${NC}"
     log "${YELLOW}Add: @import url('/files/css/cyber-theme.css');${NC}"

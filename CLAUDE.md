@@ -6,9 +6,10 @@ This repository contains scripts for deploying CTFd (Capture The Flag platform) 
 ## Key Architecture
 - **CTFd**: Running in Docker container on port 8000
 - **MariaDB**: Database container
-- **Redis**: Cache container  
+- **Redis**: Cache container
 - **Nginx**: Reverse proxy with SSL termination (ports 80/443)
 - **Docker Compose**: Orchestration of all services
+- **Plugins**: Mounted individually to avoid overwriting built-in plugins
 
 ## Critical Docker Container Insights
 
@@ -52,12 +53,20 @@ docker compose down && docker compose up -d
 
 ### Permission Errors in Container
 **Cause**: Container runs as user 1001, file system is read-only
-**Solution**: Use uploads directory instead of trying to modify container files
+**Solution**:
+1. Use uploads directory for custom content
+2. Set proper permissions: `chown -R 1001:1001 data/CTFd/uploads`
+3. Scripts now automatically set correct permissions during installation
 
 ## Script Purposes
 
 ### Main Installation
-- `ctfd-install-clean.sh`: Complete CTFd installation with all fixes
+- `ctfd-install-clean.sh`: Complete CTFd installation with all fixes and plugin support
+
+### Plugin Management
+- `install-ctfd-plugins.sh`: Standalone plugin installation for existing deployments
+- Each plugin is mounted individually as `/opt/CTFd/CTFd/plugins/[plugin_name]`
+- This avoids overwriting CTFd's built-in plugins
 
 ### Theme Management
 - `install-cyber-theme.sh`: Installs cyber theme CSS via uploads directory
@@ -77,6 +86,17 @@ docker compose logs ctfd --tail=50
 curl -I http://localhost:8000
 ```
 
+### Fix Permission Issues
+```bash
+# If uploads directory has permission errors:
+sudo chown -R 1001:1001 data/CTFd/uploads
+sudo chmod -R 755 data/CTFd/uploads
+
+# For all CTFd directories:
+sudo chown -R 1001:1001 data/CTFd/
+sudo chmod -R 755 data/CTFd/
+```
+
 ### Verify Theme Files
 ```bash
 docker compose exec ctfd ls -la /var/uploads/css/
@@ -94,10 +114,12 @@ docker compose exec ctfd ls -la /var/uploads/css/
 
 ## Key Learnings
 1. **Never mount volumes to `/opt/CTFd/CTFd/themes/`** - it breaks CTFd
-2. **Always use uploads directory** for custom content
-3. **Container file system is read-only** - work within these constraints
-4. **Sequential startup** prevents database initialization issues
-5. **Test locally first** with `curl http://localhost:8000`
+2. **Mount plugins individually** as `/opt/CTFd/CTFd/plugins/[plugin_name]` to avoid overwriting built-in plugins
+3. **Always use uploads directory** for custom content
+4. **Set proper permissions** - CTFd runs as user 1001, directories need `chown 1001:1001`
+5. **Container file system is read-only** - work within these constraints
+6. **Sequential startup** prevents database initialization issues
+7. **Test locally first** with `curl http://localhost:8000`
 
 ## Contact
 For issues or questions about this deployment, check:
