@@ -1178,6 +1178,23 @@ EOF
     done
     echo ""
 
+    # Critical: Fix MySQL system database permissions after initialization
+    log "${YELLOW}Fixing MySQL system database permissions after initialization...${NC}"
+    docker compose down
+    sleep 3
+    chown -R 999:999 data/mysql
+    docker compose up -d db cache
+
+    # Wait for database to be ready after permission fix
+    for i in {1..30}; do
+        if docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; then
+            break
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo ""
+
     # Now start CTFd with database ready
     log "${YELLOW}Starting CTFd application...${NC}"
     docker compose up -d ctfd
