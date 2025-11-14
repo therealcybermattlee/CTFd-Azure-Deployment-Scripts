@@ -1,0 +1,63 @@
+# Quick local test for CTFd with plugins
+# Usage: docker compose -f docker-compose.test.yml up -d
+
+services:
+  ctfd:
+    image: ctfd/ctfd:latest
+    container_name: ctfd_quick_test
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=test_secret_key_for_local_development_only
+      - DATABASE_URL=mysql+pymysql://ctfd:testpass@db:3306/ctfd
+      - REDIS_URL=redis://cache:6379
+      - WORKERS=1
+      - REVERSE_PROXY=False
+      - LOG_FOLDER=/var/log/CTFd
+      - UPLOAD_FOLDER=/var/uploads
+    volumes:
+      - ./test-data/CTFd/logs:/var/log/CTFd
+      - ./test-data/CTFd/uploads:/var/uploads
+      # Example: Individual plugin mounts (uncomment as needed)
+      # - ./test-data/CTFd/plugins/CTFd-Crawler:/opt/CTFd/CTFd/plugins/CTFd-Crawler
+      # - ./test-data/CTFd/plugins/CTFd-SSO:/opt/CTFd/CTFd/plugins/CTFd-SSO
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_started
+    networks:
+      - ctfd_test_net
+
+  db:
+    image: mariadb:10.11
+    container_name: ctfd_quick_test_db
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=testrootpass
+      - MYSQL_USER=ctfd
+      - MYSQL_PASSWORD=testpass
+      - MYSQL_DATABASE=ctfd
+    volumes:
+      - ./test-data/mysql:/var/lib/mysql
+    networks:
+      - ctfd_test_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptestrootpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cache:
+    image: redis:7-alpine
+    container_name: ctfd_quick_test_cache
+    restart: unless-stopped
+    volumes:
+      - ./test-data/redis:/data
+    networks:
+      - ctfd_test_net
+
+networks:
+  ctfd_test_net:
+    driver: bridge

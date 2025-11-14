@@ -250,7 +250,7 @@ sudo ./uninstall-ctfd.sh
 sudo reboot
 
 # 3. Fresh install
-sudo ./install-ctfd.sh
+sudo ./ctfd-install-clean.sh
 ```
 
 ### 🆘 Getting Help

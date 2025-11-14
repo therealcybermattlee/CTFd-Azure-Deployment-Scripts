@@ -33,7 +33,7 @@ cd ctfd-azure-deploy
 ```
 
 ### 2. Configure Your Domain
-Edit `install-ctfd.sh` and update:
+Edit `ctfd-install-clean.sh` and update:
 ```bash
 DOMAIN="your-domain.com"  # Replace with your actual domain
 EMAIL="admin@your-domain.com"  # For Let's Encrypt notifications
@@ -41,8 +41,8 @@ EMAIL="admin@your-domain.com"  # For Let's Encrypt notifications
 
 ### 3. Run Installation
 ```bash
-chmod +x install-ctfd.sh
-sudo ./install-ctfd.sh
+chmod +x ctfd-install-clean.sh
+sudo ./ctfd-install-clean.sh
 ```
 
 The script will:
@@ -56,8 +56,8 @@ The script will:
 
 ```
 ctfd-azure-deploy/
-├── install-ctfd.sh      # Main installation script
-├── uninstall-ctfd.sh    # Complete uninstall script
+├── ctfd-install-clean.sh    # Main installation script
+├── uninstall-ctfd.sh        # Complete uninstall script
 ├── README.md            # This file
 ├── LICENSE              # MIT License
 ├── CONTRIBUTING.md      # Contribution guidelines

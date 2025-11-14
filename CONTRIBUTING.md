@@ -99,7 +99,7 @@ Fixes #123
 ## Project Structure
 
 ```
-install-ctfd.sh       # Main installation script
+ctfd-install-clean.sh # Main installation script
 ├── Functions:
 │   ├── command_exists()
 │   ├── generate_password()
