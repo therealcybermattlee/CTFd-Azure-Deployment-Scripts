@@ -32,20 +32,14 @@ git clone https://github.com/therealcybermattlee/ctfd-azure-deploy.git
 cd ctfd-azure-deploy
 ```
 
-### 2. Configure Your Domain
-Edit `ctfd-install-clean.sh` and update:
-```bash
-DOMAIN="your-domain.com"  # Replace with your actual domain
-EMAIL="admin@your-domain.com"  # For Let's Encrypt notifications
-```
-
-### 3. Run Installation
+### 2. Run Installation
 ```bash
 chmod +x ctfd-install-clean.sh
 sudo ./ctfd-install-clean.sh
 ```
 
 The script will:
+- Prompt for your domain name and admin email
 - Install and configure Docker
 - Set up CTFd with MariaDB and Redis
 - Configure Nginx as reverse proxy
@@ -56,19 +50,18 @@ The script will:
 
 ```
 ctfd-azure-deploy/
-├── ctfd-install-clean.sh    # Main installation script
+├── ctfd-install-clean.sh     # Main installation script
+├── install-ctfd-plugins.sh   # Plugin installation script
+├── install-cyber-theme.sh    # Cyber theme installation
+├── manage-certificates.sh    # SSL certificate management
+├── test-local.sh            # Local testing script
 ├── uninstall-ctfd.sh        # Complete uninstall script
-├── README.md            # This file
-├── LICENSE              # MIT License
-├── CONTRIBUTING.md      # Contribution guidelines
-├── docs/
-│   ├── TROUBLESHOOTING.md
-│   ├── AZURE-SETUP.md
-│   └── SSL-SETUP.md
-└── .github/
-    └── ISSUE_TEMPLATE/
-        ├── bug_report.md
-        └── feature_request.md
+├── docker-compose.test.yml  # Local testing configuration
+├── README.md                # This file
+├── CLAUDE.md               # AI assistant documentation
+├── LICENSE                 # MIT License
+├── CONTRIBUTING.md         # Contribution guidelines
+└── TROUBLESHOOTING.md      # Troubleshooting guide
 ```
 
 ## 🛠️ Management Scripts

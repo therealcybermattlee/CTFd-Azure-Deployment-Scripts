@@ -3,7 +3,7 @@
 #############################################
 # CTFd Installation Script for Azure Ubuntu VM
 # Clean, production-ready deployment
-# Domain: ctf.pax8bootcamp.com
+# Interactive setup with custom domain support
 #############################################
 
 set -e  # Exit on error
@@ -15,9 +15,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-DOMAIN="ctf.pax8bootcamp.com"
-EMAIL="admin@pax8bootcamp.com"  # Change this for Let's Encrypt notifications
+# Default configuration
 INSTALL_DIR="$HOME/CTFd"
 LOG_FILE="/tmp/ctfd-install-$(date +%Y%m%d-%H%M%S).log"
 
@@ -28,11 +26,11 @@ log() {
 
 # Check if running with sudo
 if [[ $EUID -ne 0 ]]; then
-   log "${RED}========================================${NC}"
-   log "${RED}This script must be run with sudo${NC}"
-   log "${RED}========================================${NC}"
-   log ""
-   log "${YELLOW}Usage: sudo ./install-ctfd.sh${NC}"
+   echo -e "${RED}========================================${NC}"
+   echo -e "${RED}This script must be run with sudo${NC}"
+   echo -e "${RED}========================================${NC}"
+   echo ""
+   echo -e "${YELLOW}Usage: sudo ./ctfd-install-clean.sh${NC}"
    exit 1
 fi
 
@@ -41,12 +39,44 @@ ACTUAL_USER=${SUDO_USER:-$USER}
 ACTUAL_HOME=$(getent passwd $ACTUAL_USER | cut -d: -f6)
 INSTALL_DIR="$ACTUAL_HOME/CTFd"
 
-# Header
+# Interactive prompts for configuration
 clear
 log "${BLUE}========================================${NC}"
-log "${BLUE}     CTFd Installation Script${NC}"
+log "${BLUE}     CTFd Installation Setup${NC}"
+log "${BLUE}========================================${NC}"
+log ""
+
+# Prompt for domain
+while true; do
+    read -p "$(echo -e "${YELLOW}Enter your domain name (e.g., ctf.example.com):${NC} ")" DOMAIN
+    if [[ -z "$DOMAIN" ]]; then
+        log "${RED}Domain cannot be empty${NC}"
+    elif [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+        log "${RED}Invalid domain format${NC}"
+    else
+        break
+    fi
+done
+
+# Prompt for email
+while true; do
+    read -p "$(echo -e "${YELLOW}Enter admin email for Let's Encrypt notifications:${NC} ")" EMAIL
+    if [[ -z "$EMAIL" ]]; then
+        log "${RED}Email cannot be empty${NC}"
+    elif [[ ! "$EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+        log "${RED}Invalid email format${NC}"
+    else
+        break
+    fi
+done
+
+# Display configuration summary
+log ""
+log "${BLUE}========================================${NC}"
+log "${BLUE}     Configuration Summary${NC}"
 log "${BLUE}========================================${NC}"
 log "${GREEN}Domain:${NC} $DOMAIN"
+log "${GREEN}Email:${NC} $EMAIL"
 log "${GREEN}Install Directory:${NC} $INSTALL_DIR"
 log "${GREEN}User:${NC} $ACTUAL_USER"
 log "${GREEN}Log File:${NC} $LOG_FILE"
@@ -54,7 +84,7 @@ log "${BLUE}========================================${NC}"
 echo ""
 
 # Confirmation prompt
-read -p "$(echo -e "${YELLOW}Do you want to proceed with installation? [y/N]:${NC} ") " -n 1 -r
+read -p "$(echo -e "${YELLOW}Do you want to proceed with installation? [y/N]:${NC} ")" -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     log "${RED}Installation cancelled${NC}"
